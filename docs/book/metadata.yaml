@@ -1,0 +1,50 @@
+---
+title: "SearCam: 스마트폰 몰래카메라 탐지 앱 개발기"
+subtitle: "기획부터 출시까지, AI 시대의 모바일 앱 개발 완전 가이드"
+author:
+  - name: "[저자명]"
+date: "2026"
+lang: ko
+description: |
+  SearCam 프로젝트의 기획부터 출시까지 전 과정을 기록한 기술 서적.
+  29개의 기획 문서를 기반으로 Wi-Fi 스캔, 렌즈 감지, EMF 센서를 활용한
+  몰래카메라 탐지 앱의 설계, 구현, 배포, 성장 전략을 다룬다.
+keywords:
+  - 몰래카메라 탐지
+  - Android 앱 개발
+  - Kotlin
+  - Clean Architecture
+  - 모바일 센서
+  - 보안 앱
+  - 스타트업
+
+# Typography
+mainfont: "Noto Sans KR"
+sansfont: "Noto Sans KR"
+monofont: "JetBrains Mono"
+fontsize: 11pt
+
+# PDF settings (XeLaTeX)
+documentclass: book
+papersize: a5
+geometry:
+  - top=25mm
+  - bottom=25mm
+  - left=20mm
+  - right=20mm
+linestretch: 1.5
+numbersections: true
+toc: true
+toc-depth: 3
+colorlinks: true
+linkcolor: "blue"
+urlcolor: "blue"
+
+# Header/Footer
+header-includes:
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \fancyhead[LE]{\leftmark}
+  - \fancyhead[RO]{\rightmark}
+  - \fancyfoot[C]{\thepage}
+  - \usepackage{kotex}
