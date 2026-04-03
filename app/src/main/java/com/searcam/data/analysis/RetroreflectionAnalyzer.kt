@@ -93,8 +93,11 @@ class RetroreflectionAnalyzer @Inject constructor() {
 
             val threshold = calculateThreshold(grayPixels)
             val candidates = extractHighBrightnessClusters(grayPixels, width, height, threshold)
-            val filtered = candidates.filter { cluster ->
-                passesCircularityCheck(cluster) && passesContrastCheck(cluster, grayPixels, width, height)
+            val filtered = candidates.mapNotNull { cluster ->
+                if (!passesCircularityCheck(cluster)) return@mapNotNull null
+                val ratio = computeContrastRatio(cluster, grayPixels, width, height)
+                    ?: return@mapNotNull null
+                cluster.copy(contrastRatio = ratio)
             }
 
             updateStabilityTracker(filtered, isFlashOn)
@@ -307,17 +310,20 @@ class RetroreflectionAnalyzer @Inject constructor() {
     }
 
     /**
-     * 주변 대비 비율 검사를 수행한다.
+     * 주변 대비 비율을 계산한다.
      *
      * 클러스터 중심 기준 SURROUND_RADIUS px 주변 픽셀의 평균 밝기 대비를
-     * 계산한다. 5.0 이상이어야 유효한 역반사로 판정한다.
+     * 계산한다. CONTRAST_RATIO_MIN(5.0) 이상이면 해당 비율을 반환하고,
+     * 미달이거나 계산 불가 시 null을 반환한다.
+     *
+     * @return 대비 비율 (통과 시), null (실패 시)
      */
-    private fun passesContrastCheck(
+    private fun computeContrastRatio(
         cluster: Cluster,
         imagePixels: ByteArray,
         width: Int,
         height: Int,
-    ): Boolean {
+    ): Float? {
         val surroundPixels = mutableListOf<Float>()
         val cx = cluster.centerX
         val cy = cluster.centerY
@@ -335,13 +341,12 @@ class RetroreflectionAnalyzer @Inject constructor() {
             }
         }
 
-        if (surroundPixels.isEmpty()) return false
+        if (surroundPixels.isEmpty()) return null
 
         val surroundMean = surroundPixels.average().toFloat()
         val contrastRatio = if (surroundMean > 0) cluster.meanBrightness / surroundMean else Float.MAX_VALUE
-        cluster.contrastRatio = contrastRatio
 
-        return contrastRatio >= CONTRAST_RATIO_MIN
+        return if (contrastRatio >= CONTRAST_RATIO_MIN) contrastRatio else null
     }
 
     // ─────────────────────────────────────────────────────────
@@ -494,7 +499,7 @@ class RetroreflectionAnalyzer @Inject constructor() {
     /**
      * 고휘도 클러스터 (내부 분석용)
      *
-     * var contrastRatio는 Step 3에서 검사 후 채워진다.
+     * contrastRatio는 Step 3 통과 후 copy()로 채워진다.
      */
     private data class Cluster(
         val centerX: Int,
@@ -504,7 +509,7 @@ class RetroreflectionAnalyzer @Inject constructor() {
         val circularity: Float,
         val meanBrightness: Float,
         val pixels: List<Pair<Int, Int>>,
-        var contrastRatio: Float = 0f,
+        val contrastRatio: Float = 0f,
     )
 
     /**

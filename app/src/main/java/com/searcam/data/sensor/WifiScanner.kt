@@ -48,7 +48,7 @@ class WifiScanner @Inject constructor(
         context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
     // 30초 캐시: Android 12+ Wi-Fi 스캔 쓰로틀링 대응
-    private var cachedDevices: List<NetworkDevice> = emptyList()
+    @Volatile private var cachedDevices: List<NetworkDevice> = emptyList()
     private val lastScanTime = AtomicLong(0L)
 
     /**
@@ -379,10 +379,13 @@ class WifiScanner @Inject constructor(
             .firstOrNull { it.startsWith("SERVER:", ignoreCase = true) }
             ?.removePrefix("SERVER:")?.trim()
 
+        val rawHostname = server ?: locationLine?.substringAfter("LOCATION:")?.trim()
+        val hostname = rawHostname?.take(128)?.replace(Regex("[\\x00-\\x1F\\x7F]"), "")
+
         return NetworkDevice(
             ip = ip,
             mac = "",
-            hostname = server ?: locationLine?.substringAfter("LOCATION:")?.trim(),
+            hostname = hostname,
             vendor = null,
             deviceType = DeviceType.UNKNOWN,
             openPorts = emptyList(),

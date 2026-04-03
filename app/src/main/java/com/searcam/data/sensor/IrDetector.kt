@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import javax.inject.Inject
@@ -79,7 +80,7 @@ class IrDetector @Inject constructor(
     val irPoints: StateFlow<List<IrPoint>> = _irPoints.asStateFlow()
 
     /** IR 포인트 시간 추적기 (위치 키 → 추적 정보) */
-    private val irTracker: MutableMap<String, TrackedIrPoint> = mutableMapOf()
+    private val irTracker: MutableMap<String, TrackedIrPoint> = ConcurrentHashMap()
 
     /** CameraX Camera 객체 */
     private var camera: Camera? = null
