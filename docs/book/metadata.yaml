@@ -18,10 +18,10 @@ keywords:
   - 보안 앱
   - 스타트업
 
-# Typography
-mainfont: "Noto Sans KR"
-sansfont: "Noto Sans KR"
-monofont: "JetBrains Mono"
+# Typography (macOS 기본 한국어 폰트 사용)
+mainfont: "Apple SD Gothic Neo"
+sansfont: "Apple SD Gothic Neo"
+monofont: "Menlo"
 fontsize: 11pt
 
 # PDF settings (XeLaTeX)

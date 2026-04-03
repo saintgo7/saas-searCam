@@ -8,8 +8,8 @@
 # 의존성:
 #   - pandoc 3.0+
 #   - xelatex (texlive-xetex)
-#   - Noto Sans KR 폰트
-#   - JetBrains Mono 폰트
+#   - Apple SD Gothic Neo 폰트 (macOS 기본 내장)
+#   - Menlo 폰트 (macOS 기본 내장)
 
 set -euo pipefail
 

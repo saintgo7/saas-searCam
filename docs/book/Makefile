@@ -81,9 +81,9 @@ PANDOC_COMMON := \
 PANDOC_PDF := \
 	$(PANDOC_COMMON) \
 	--pdf-engine=xelatex \
-	-V mainfont="Noto Sans KR" \
-	-V sansfont="Noto Sans KR" \
-	-V monofont="JetBrains Mono" \
+	-V mainfont="Apple SD Gothic Neo" \
+	-V sansfont="Apple SD Gothic Neo" \
+	-V monofont="Menlo" \
 	-V fontsize=11pt \
 	-V geometry:margin=25mm \
 	-V linestretch=1.5
