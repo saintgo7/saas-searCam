@@ -3,6 +3,8 @@ package com.searcam.ui.lens
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import com.searcam.domain.model.IrPoint
 import com.searcam.domain.model.RetroreflectionPoint
 import com.searcam.domain.repository.IrDetectionRepository
@@ -166,10 +168,12 @@ class LensViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        // ViewModel 소멸 시 카메라 리소스 해제
-        viewModelScope.launch {
-            lensDetectionRepository.stopDetection()
-            irDetectionRepository.stopDetection()
+        // viewModelScope는 onCleared() 시점에 취소됨 — runBlocking으로 동기 해제 보장
+        runBlocking {
+            withTimeout(1_000L) {
+                lensDetectionRepository.stopDetection()
+                irDetectionRepository.stopDetection()
+            }
         }
     }
 }

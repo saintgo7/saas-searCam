@@ -79,12 +79,12 @@ class MagneticSensor @Inject constructor(
             }
         }
 
-        // SENSOR_DELAY_FASTEST로 등록 후 Flow 레벨에서 20Hz 필터링
+        // 50,000μs(20Hz)로 등록하여 불필요한 CPU 소비 방지
         // SensorManager 콜백은 반드시 Main 스레드 컨텍스트에서 등록해야 함
         val registered = sensorManager.registerListener(
             listener,
             sensor,
-            SensorManager.SENSOR_DELAY_FASTEST,
+            SENSOR_DELAY_20HZ_US,
         )
 
         if (!registered) {
@@ -122,7 +122,7 @@ class MagneticSensor @Inject constructor(
         val registered = sensorManager.registerListener(
             listener,
             sensor,
-            SensorManager.SENSOR_DELAY_FASTEST,
+            SENSOR_DELAY_20HZ_US,
         )
 
         if (!registered) {
@@ -190,4 +190,9 @@ class MagneticSensor @Inject constructor(
         delta = 0f,
         level = EmfLevel.NORMAL,
     )
+
+    companion object {
+        /** 20Hz 샘플링 = 50ms 간격 = 50,000μs */
+        private const val SENSOR_DELAY_20HZ_US = 50_000
+    }
 }

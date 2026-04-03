@@ -33,45 +33,23 @@ class RiskCalculator @Inject constructor(
      * @return riskScore와 isCamera가 갱신된 불변 복사본
      */
     fun calculateDeviceRisk(device: NetworkDevice): NetworkDevice {
-        var score = 0
-
-        // 카메라 제조사 MAC 매칭 (+40점)
-        if (device.mac.isNotEmpty() && ouiDatabase.isCameraVendor(device.mac)) {
-            score += SCORE_CAMERA_VENDOR
-            Timber.d("위험도 +$SCORE_CAMERA_VENDOR: 카메라 제조사 MAC (${device.mac})")
-        }
-
-        // RTSP 포트(554) 개방 (+30점)
-        if (device.openPorts.contains(PORT_RTSP)) {
-            score += SCORE_RTSP_PORT
-            Timber.d("위험도 +$SCORE_RTSP_PORT: RTSP 포트 개방 (${device.ip})")
-        }
-
-        // HTTP 스트리밍 포트 개방 (+15점)
-        val hasHttpPort = device.openPorts.any { it in HTTP_PORTS }
-        if (hasHttpPort) {
-            score += SCORE_HTTP_PORT
-            Timber.d("위험도 +$SCORE_HTTP_PORT: HTTP 포트 개방 (${device.ip})")
-        }
-
-        // ONVIF 포트(3702) 개방 (+20점)
-        if (device.openPorts.contains(PORT_ONVIF)) {
-            score += SCORE_ONVIF_PORT
-            Timber.d("위험도 +$SCORE_ONVIF_PORT: ONVIF 포트 개방 (${device.ip})")
-        }
-
-        // 호스트명에 카메라 키워드 포함 (+15점)
         val hostname = device.hostname?.lowercase() ?: ""
-        if (CAMERA_HOSTNAME_KEYWORDS.any { hostname.contains(it) }) {
-            score += SCORE_CAMERA_HOSTNAME
-            Timber.d("위험도 +$SCORE_CAMERA_HOSTNAME: 카메라 키워드 호스트명 ($hostname)")
-        }
 
-        // mDNS _rtsp 서비스 광고 (+25점)
-        if (device.services.any { it.contains("_rtsp", ignoreCase = true) }) {
-            score += SCORE_MDNS_RTSP
-            Timber.d("위험도 +$SCORE_MDNS_RTSP: mDNS RTSP 서비스 광고 (${device.ip})")
-        }
+        val score = listOfNotNull(
+            SCORE_CAMERA_VENDOR.takeIf {
+                device.mac.isNotEmpty() && ouiDatabase.isCameraVendor(device.mac)
+            }.also { if (it != null) Timber.d("위험도 +$SCORE_CAMERA_VENDOR: 카메라 제조사 MAC (${device.mac})") },
+            SCORE_RTSP_PORT.takeIf { device.openPorts.contains(PORT_RTSP) }
+                .also { if (it != null) Timber.d("위험도 +$SCORE_RTSP_PORT: RTSP 포트 개방 (${device.ip})") },
+            SCORE_HTTP_PORT.takeIf { device.openPorts.any { it in HTTP_PORTS } }
+                .also { if (it != null) Timber.d("위험도 +$SCORE_HTTP_PORT: HTTP 포트 개방 (${device.ip})") },
+            SCORE_ONVIF_PORT.takeIf { device.openPorts.contains(PORT_ONVIF) }
+                .also { if (it != null) Timber.d("위험도 +$SCORE_ONVIF_PORT: ONVIF 포트 개방 (${device.ip})") },
+            SCORE_CAMERA_HOSTNAME.takeIf { CAMERA_HOSTNAME_KEYWORDS.any { hostname.contains(it) } }
+                .also { if (it != null) Timber.d("위험도 +$SCORE_CAMERA_HOSTNAME: 카메라 키워드 호스트명 ($hostname)") },
+            SCORE_MDNS_RTSP.takeIf { device.services.any { it.contains("_rtsp", ignoreCase = true) } }
+                .also { if (it != null) Timber.d("위험도 +$SCORE_MDNS_RTSP: mDNS RTSP 서비스 광고 (${device.ip})") },
+        ).sumOf { it }
 
         val finalScore = score.coerceIn(0, MAX_SCORE)
         val isCamera = finalScore >= CAMERA_THRESHOLD

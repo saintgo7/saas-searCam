@@ -480,16 +480,14 @@ class RetroreflectionAnalyzer @Inject constructor() {
         isStable: Boolean,
         flashDependency: Boolean,
     ): Int {
-        var score = 0
-
         val radius = sqrt(tracked.lastArea / PI.toFloat())
-        if (radius in 1.0..5.0 && tracked.lastCircularity > CIRCULARITY_MIN) score += 30
-        if (isStable) score += 20
-        if (flashDependency) score += 25
-        if (tracked.lastContrastRatio > 20.0f) score += 15
-        if (tracked.lastBrightness > 230f) score += 10
-
-        return score.coerceIn(0, 100)
+        return listOfNotNull(
+            30.takeIf { radius in 1.0..5.0 && tracked.lastCircularity > CIRCULARITY_MIN },
+            20.takeIf { isStable },
+            25.takeIf { flashDependency },
+            15.takeIf { tracked.lastContrastRatio > 20.0f },
+            10.takeIf { tracked.lastBrightness > 230f },
+        ).sumOf { it }.coerceIn(0, 100)
     }
 
     // ─────────────────────────────────────────────────────────

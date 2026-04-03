@@ -96,10 +96,8 @@ class PortScanner @Inject constructor() {
         return withTimeoutOrNull(Constants.PORT_SCAN_TIMEOUT_MS) {
             try {
                 Socket().use { socket ->
-                    socket.connect(
-                        InetSocketAddress(ip, port),
-                        Constants.PORT_SCAN_TIMEOUT_MS.toInt(),
-                    )
+                    // 타임아웃은 withTimeoutOrNull이 단일 제어 — connect()에 중복 설정 불필요
+                    socket.connect(InetSocketAddress(ip, port))
                     true
                 }
             } catch (e: java.net.ConnectException) {

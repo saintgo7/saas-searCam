@@ -48,27 +48,7 @@ class IrDetector @Inject constructor(
     private val cameraProvider: ProcessCameraProvider,
 ) {
 
-    // ─────────────────────────────────────────────────────────
-    // 상수
-    // ─────────────────────────────────────────────────────────
-
-    /** IR 고휘도 임계값 (0~255) — 어두운 환경 기준 고정값 */
-    private val IR_INTENSITY_THRESHOLD = 200
-
-    /** IR 의심 확정 지속 시간 (ms) */
-    private val IR_CONFIRM_DURATION_MS = 3_000L
-
-    /** 이동 포인트 제거 임계값 (픽셀) */
-    private val MOVEMENT_THRESHOLD_PX = 30
-
-    /** 깜빡임 제거 임계값 (횟수) */
-    private val BLINK_COUNT_THRESHOLD = 3
-
-    /** 안정성 판정 위치 허용 오차 (픽셀) */
-    private val TRACKING_TOLERANCE_PX = 15
-
-    /** 클러스터 연결 판정 거리 (픽셀) */
-    private val CLUSTER_MERGE_DISTANCE = 5
+    // 상수는 companion object로 이동
 
     // ─────────────────────────────────────────────────────────
     // 상태
@@ -433,14 +413,13 @@ class IrDetector @Inject constructor(
      *   PURPLE 색상:  +20점
      *   intensity > 220: +15점
      */
-    private fun calculateIrRiskScore(tracked: TrackedIrPoint): Int {
-        var score = 0
-        if (tracked.duration >= IR_CONFIRM_DURATION_MS) score += 30
-        if (tracked.totalMovement <= MOVEMENT_THRESHOLD_PX / 2) score += 25
-        if (tracked.lastColor == IrColor.PURPLE) score += 20
-        if (tracked.lastIntensity > 220f) score += 15
-        return score.coerceIn(0, 100)
-    }
+    private fun calculateIrRiskScore(tracked: TrackedIrPoint): Int =
+        listOfNotNull(
+            30.takeIf { tracked.duration >= IR_CONFIRM_DURATION_MS },
+            25.takeIf { tracked.totalMovement <= MOVEMENT_THRESHOLD_PX / 2 },
+            20.takeIf { tracked.lastColor == IrColor.PURPLE },
+            15.takeIf { tracked.lastIntensity > 220f },
+        ).sumOf { it }.coerceIn(0, 100)
 
     // ─────────────────────────────────────────────────────────
     // Inner Analyzer
@@ -502,4 +481,24 @@ class IrDetector @Inject constructor(
         val lastColor: IrColor,
         val lastVisible: Boolean,
     )
+
+    companion object {
+        /** IR 고휘도 임계값 (0~255) — 어두운 환경 기준 고정값 */
+        private const val IR_INTENSITY_THRESHOLD = 200
+
+        /** IR 의심 확정 지속 시간 (ms) */
+        private const val IR_CONFIRM_DURATION_MS = 3_000L
+
+        /** 이동 포인트 제거 임계값 (픽셀) */
+        private const val MOVEMENT_THRESHOLD_PX = 30
+
+        /** 깜빡임 제거 임계값 (횟수) */
+        private const val BLINK_COUNT_THRESHOLD = 3
+
+        /** 안정성 판정 위치 허용 오차 (픽셀) */
+        private const val TRACKING_TOLERANCE_PX = 15
+
+        /** 클러스터 연결 판정 거리 (픽셀) */
+        private const val CLUSTER_MERGE_DISTANCE = 5
+    }
 }

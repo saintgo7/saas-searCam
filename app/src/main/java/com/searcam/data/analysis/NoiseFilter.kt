@@ -40,11 +40,7 @@ class NoiseFilter @Inject constructor() {
     /** 직전 샘플의 타임스탬프 (ms) */
     private var previousTimestamp: Long = 0L
 
-    /** 급변 판정 임계값 (μT) */
-    private val SPIKE_THRESHOLD_UT = 50f
-
-    /** 급변 판정 시간 창 (ms) */
-    private val SPIKE_TIME_WINDOW_MS = 300L
+    // SPIKE_THRESHOLD_UT, SPIKE_TIME_WINDOW_MS → companion object
 
     // ────────────────────────────────────────────────
     // 캘리브레이션 상태
@@ -246,5 +242,13 @@ class NoiseFilter @Inject constructor() {
         val mean = average().toFloat()
         val variance = sumOf { ((it - mean) * (it - mean)).toDouble() } / size
         return sqrt(variance.toFloat())
+    }
+
+    companion object {
+        /** 급변 판정 임계값 (μT) */
+        private const val SPIKE_THRESHOLD_UT = 50f
+
+        /** 급변 판정 시간 창 (ms) */
+        private const val SPIKE_TIME_WINDOW_MS = 300L
     }
 }
