@@ -6,6 +6,9 @@ import android.net.wifi.WifiManager
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.content.ContextCompat
+import java.util.concurrent.CountDownLatch
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -50,6 +53,28 @@ object SensorModule {
     fun provideWifiManager(
         @ApplicationContext context: Context
     ): WifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+
+    /**
+     * ProcessCameraProvider — CameraX 카메라 생명주기 관리자
+     *
+     * 앱 프로세스 범위의 싱글톤으로 제공된다.
+     * LifecycleOwner 바인딩은 LensDetector/IrDetector가 담당한다.
+     */
+    @Provides
+    @Singleton
+    fun provideProcessCameraProvider(
+        @ApplicationContext context: Context
+    ): ProcessCameraProvider {
+        var provider: ProcessCameraProvider? = null
+        val latch = CountDownLatch(1)
+        val future = ProcessCameraProvider.getInstance(context)
+        future.addListener({
+            provider = future.get()
+            latch.countDown()
+        }, ContextCompat.getMainExecutor(context))
+        latch.await()
+        return provider!!
+    }
 
     /**
      * CameraX Preview UseCase

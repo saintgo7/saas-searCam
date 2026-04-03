@@ -1,5 +1,6 @@
 package com.searcam.domain.usecase
 
+import androidx.lifecycle.LifecycleOwner
 import com.searcam.domain.model.IrPoint
 import com.searcam.domain.model.LayerResult
 import com.searcam.domain.model.LayerType
@@ -54,14 +55,15 @@ class RunFullScanUseCase(
      * ScanReport를 단 한 번 emit하고 종료된다.
      * 전체 타임아웃(180초) 초과 시 그 시점까지의 결과로 리포트를 생성한다.
      *
+     * @param lifecycleOwner CameraX 렌즈/IR 레이어 바인딩용 LifecycleOwner
      * @return ScanReport를 emit하는 Flow
      */
-    operator fun invoke(): Flow<ScanReport> = flow {
+    operator fun invoke(lifecycleOwner: LifecycleOwner): Flow<ScanReport> = flow {
         val reportId = UUID.randomUUID().toString()
         val startedAt = System.currentTimeMillis()
 
         // 4개 레이어 병렬 실행
-        val (wifiResult, lensResult, irResult, magneticResult) = runAllLayersInParallel()
+        val (wifiResult, lensResult, irResult, magneticResult) = runAllLayersInParallel(lifecycleOwner)
 
         val completedAt = System.currentTimeMillis()
 
@@ -79,9 +81,9 @@ class RunFullScanUseCase(
         // 레이어별 수집 데이터를 ScanReport로 통합
         val allDevices = wifiResult.devices
         val allFindings = layerResults.values.flatMap { it.findings }
-        val retroPoints = collectRetroPoints(lensResult)
-        val irPoints = collectIrPoints(irResult)
-        val magneticReadings = collectMagneticReadings(magneticResult)
+        val retroPoints = lensResult.retroPoints
+        val irPoints = irResult.irPoints
+        val magneticReadings = magneticResult.magneticReadings
 
         val report = ScanReport(
             id = reportId,
@@ -108,10 +110,10 @@ class RunFullScanUseCase(
      *
      * @return LayerResult 4-tuple (wifi, lens, ir, magnetic)
      */
-    private suspend fun runAllLayersInParallel(): List<LayerResult> = coroutineScope {
+    private suspend fun runAllLayersInParallel(lifecycleOwner: LifecycleOwner): List<LayerResult> = coroutineScope {
         val wifiDeferred = async { runWifiLayer() }
-        val lensDeferred = async { runLensLayer() }
-        val irDeferred = async { runIrLayer() }
+        val lensDeferred = async { runLensLayer(lifecycleOwner) }
+        val irDeferred = async { runIrLayer(lifecycleOwner) }
         val magneticDeferred = async { runMagneticLayer() }
 
         listOf(
@@ -155,10 +157,10 @@ class RunFullScanUseCase(
     /**
      * Layer 2A: Retroreflection 기반 렌즈 감지
      */
-    private suspend fun runLensLayer(): LayerResult {
+    private suspend fun runLensLayer(lifecycleOwner: LifecycleOwner): LayerResult {
         val startAt = System.currentTimeMillis()
         return try {
-            lensDetectionRepository.startDetection().getOrThrow()
+            lensDetectionRepository.startDetection(lifecycleOwner).getOrThrow()
 
             // LENS_SCAN_DURATION_MS 동안 최대 LENS_MAX_SAMPLES 샘플 수집
             val allPoints = withTimeout(LENS_LAYER_TIMEOUT_MS) {
@@ -184,6 +186,7 @@ class RunFullScanUseCase(
                 devices = emptyList(),
                 durationMs = System.currentTimeMillis() - startAt,
                 findings = emptyList(),
+                retroPoints = allPoints,
             )
         } catch (e: Exception) {
             runCatching { lensDetectionRepository.stopDetection() }
@@ -201,10 +204,10 @@ class RunFullScanUseCase(
     /**
      * Layer 2B: IR LED 감지
      */
-    private suspend fun runIrLayer(): LayerResult {
+    private suspend fun runIrLayer(lifecycleOwner: LifecycleOwner): LayerResult {
         val startAt = System.currentTimeMillis()
         return try {
-            irDetectionRepository.startDetection().getOrThrow()
+            irDetectionRepository.startDetection(lifecycleOwner).getOrThrow()
 
             val allPoints = withTimeout(IR_LAYER_TIMEOUT_MS) {
                 irDetectionRepository
@@ -229,6 +232,7 @@ class RunFullScanUseCase(
                 devices = emptyList(),
                 durationMs = System.currentTimeMillis() - startAt,
                 findings = emptyList(),
+                irPoints = allPoints,
             )
         } catch (e: Exception) {
             runCatching { irDetectionRepository.stopDetection() }
@@ -286,14 +290,8 @@ class RunFullScanUseCase(
     // LayerResult에서 도메인 모델 추출 헬퍼
     // ─────────────────────────────────────────────────────────
 
-    private fun collectRetroPoints(lensResult: LayerResult): List<RetroreflectionPoint> =
-        emptyList() // 실제 포인트는 data 레이어의 구현체가 LayerResult.metadata로 전달
-
-    private fun collectIrPoints(irResult: LayerResult): List<IrPoint> =
-        emptyList()
-
-    private fun collectMagneticReadings(magneticResult: LayerResult): List<MagneticReading> =
-        emptyList()
+    // retroPoints, irPoints, magneticReadings는 LayerResult에서 직접 읽음
+    // (LensDetectionRepositoryImpl, IrDetectionRepositoryImpl, MagneticRepositoryImpl이 채워넣음)
 
     companion object {
         private const val WIFI_LAYER_TIMEOUT_MS = 30_000L

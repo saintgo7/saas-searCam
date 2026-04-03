@@ -70,7 +70,7 @@ class RetroreflectionAnalyzer @Inject constructor() {
     // ─────────────────────────────────────────────────────────
 
     /** 포인트 위치별 연속 감지 프레임 카운터 (위치 키 → 카운터) */
-    private val stabilityTracker: MutableMap<String, TrackedPoint> = mutableMapOf()
+    private val stabilityTracker: MutableMap<String, TrackedPoint> = java.util.concurrent.ConcurrentHashMap()
 
     // ─────────────────────────────────────────────────────────
     // 공개 API

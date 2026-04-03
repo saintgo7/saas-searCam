@@ -1,17 +1,17 @@
 package com.searcam.data.analysis
 
-import com.searcam.util.Constants
+import com.searcam.domain.model.LayerType
 import timber.log.Timber
 import javax.inject.Inject
 
 /**
  * CrossValidator 구현체
  *
- * 3-Layer 가중 평균 방식으로 최종 위험도를 산출한다.
+ * LayerType 가중치를 단일 출처로 사용하는 가중 평균 방식으로 최종 위험도를 산출한다.
+ * (LENS + IR 가중치 합산 = 0.35)
  *
  * EMF 센서 미지원 기기 처리:
- * EMF 가중치(15%)를 Wi-Fi(+9%)와 렌즈(+6%)로 비례 재분배한다.
- * 총합이 항상 100%가 되도록 보장.
+ * EMF 가중치를 Wi-Fi와 렌즈(LENS+IR)에 비례 재분배하여 총합이 1.0이 되도록 보장.
  */
 class CrossValidatorImpl @Inject constructor() : CrossValidator {
 
@@ -21,9 +21,10 @@ class CrossValidatorImpl @Inject constructor() : CrossValidator {
      * 정상 모드 (EMF 사용 가능):
      *   score = wifi * 0.50 + lens * 0.35 + emf * 0.15
      *
-     * EMF 미지원 모드 (가중치 재분배):
-     *   score = wifi * 0.59 + lens * 0.41
-     *   (Wi-Fi: 50 + 15*0.59 ≈ 59%, 렌즈: 35 + 15*0.41 ≈ 41%)
+     * EMF 미지원 모드 (가중치 비례 재분배):
+     *   totalWithoutEmf = WIFI.weight + LENS.weight + IR.weight
+     *   wifiAdjusted = WIFI.weight / totalWithoutEmf
+     *   lensAdjusted = (LENS.weight + IR.weight) / totalWithoutEmf
      */
     override fun calculateRisk(
         wifiScore: Int,
@@ -31,15 +32,17 @@ class CrossValidatorImpl @Inject constructor() : CrossValidator {
         emfScore: Int,
         emfAvailable: Boolean
     ): Int {
+        val wifiWeight = LayerType.WIFI.weight
+        val lensWeight = LayerType.LENS.weight + LayerType.IR.weight // 0.20 + 0.15 = 0.35
+        val emfWeight = LayerType.MAGNETIC.weight
+
         val rawScore = if (emfAvailable) {
-            wifiScore * Constants.WIFI_WEIGHT +
-                lensScore * Constants.LENS_WEIGHT +
-                emfScore * Constants.EMF_WEIGHT
+            wifiScore * wifiWeight + lensScore * lensWeight + emfScore * emfWeight
         } else {
             // EMF 가중치를 Wi-Fi와 렌즈에 비례 재분배
-            val totalWithoutEmf = Constants.WIFI_WEIGHT + Constants.LENS_WEIGHT
-            val wifiAdjusted = Constants.WIFI_WEIGHT / totalWithoutEmf
-            val lensAdjusted = Constants.LENS_WEIGHT / totalWithoutEmf
+            val totalWithoutEmf = wifiWeight + lensWeight
+            val wifiAdjusted = wifiWeight / totalWithoutEmf
+            val lensAdjusted = lensWeight / totalWithoutEmf
             wifiScore * wifiAdjusted + lensScore * lensAdjusted
         }
 

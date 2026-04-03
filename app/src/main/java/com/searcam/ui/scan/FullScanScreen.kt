@@ -22,6 +22,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -50,10 +51,11 @@ fun FullScanScreen(
     viewModel: ScanViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     // 화면 진입 시 자동 Full Scan 시작
     LaunchedEffect(Unit) {
-        viewModel.startFullScan()
+        viewModel.startFullScan(lifecycleOwner)
     }
 
     // 일회성 이벤트 처리
@@ -88,7 +90,7 @@ fun FullScanScreen(
                 viewModel.cancelScan()
                 onNavigateBack()
             },
-            onRetry = { viewModel.startFullScan() },
+            onRetry = { viewModel.startFullScan(lifecycleOwner) },
             modifier = Modifier.padding(paddingValues),
         )
     }

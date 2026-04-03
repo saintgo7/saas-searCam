@@ -1,5 +1,6 @@
 package com.searcam.domain.repository
 
+import androidx.lifecycle.LifecycleOwner
 import com.searcam.domain.model.RetroreflectionPoint
 import kotlinx.coroutines.flow.Flow
 
@@ -34,9 +35,10 @@ interface LensDetectionRepository {
      * 후면 카메라를 열고 플래시를 켠다.
      * 이미 실행 중이면 아무 동작도 하지 않는다.
      *
+     * @param lifecycleOwner CameraX 바인딩에 필요한 LifecycleOwner (Activity/Fragment)
      * @return Result.success(Unit) 또는 Result.failure(exception)
      */
-    suspend fun startDetection(): Result<Unit>
+    suspend fun startDetection(lifecycleOwner: LifecycleOwner): Result<Unit>
 
     /**
      * 렌즈 감지를 중단하고 카메라 리소스를 해제한다.

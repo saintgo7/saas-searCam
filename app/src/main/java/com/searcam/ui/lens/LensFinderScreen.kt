@@ -56,9 +56,11 @@ fun LensFinderScreen(
     val lensUiState by viewModel.lensUiState.collectAsStateWithLifecycle()
     val isFlashOn by viewModel.isFlashOn.collectAsStateWithLifecycle()
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
     // 화면 진입/이탈 시 탐지 시작/중단
-    DisposableEffect(Unit) {
-        viewModel.startLensDetection()
+    DisposableEffect(lifecycleOwner) {
+        viewModel.startLensDetection(lifecycleOwner)
         onDispose {
             viewModel.stopLensDetection()
         }

@@ -6,6 +6,7 @@ import com.searcam.domain.model.EmfLevel
 import com.searcam.domain.model.MagneticReading
 import com.searcam.domain.model.RiskLevel
 import com.searcam.domain.repository.MagneticRepository
+import com.searcam.util.Constants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,7 +84,7 @@ class MagneticViewModel @Inject constructor(
             magneticRepository.observeReadings()
                 .catch { e ->
                     _uiState.value = MagneticUiState.Error(
-                        code = "E1010",
+                        code = Constants.ErrorCode.E1010,
                         message = "자기장 센서 오류: ${e.message}",
                     )
                 }
@@ -120,7 +121,7 @@ class MagneticViewModel @Inject constructor(
                 startMeasuring()
             } else {
                 _uiState.value = MagneticUiState.Error(
-                    code = "E1011",
+                    code = Constants.ErrorCode.E1011,
                     message = "캘리브레이션 실패: ${result.exceptionOrNull()?.message}",
                 )
             }

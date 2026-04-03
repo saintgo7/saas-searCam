@@ -1,5 +1,6 @@
 package com.searcam.ui.lens
 
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.searcam.domain.model.IrPoint
@@ -77,11 +78,11 @@ class LensViewModel @Inject constructor(
      *
      * 후면 카메라 + 플래시를 켜고 역반사 포인트를 실시간으로 수신한다.
      */
-    fun startLensDetection() {
+    fun startLensDetection(lifecycleOwner: LifecycleOwner) {
         viewModelScope.launch {
             _lensUiState.value = LensUiState.Starting
 
-            val startResult = lensDetectionRepository.startDetection()
+            val startResult = lensDetectionRepository.startDetection(lifecycleOwner)
             if (startResult.isFailure) {
                 _lensUiState.value = LensUiState.Error(
                     code = "E1001",
@@ -119,11 +120,11 @@ class LensViewModel @Inject constructor(
      *
      * 전면 카메라를 열고 IR 포인트를 실시간으로 수신한다.
      */
-    fun startIrDetection() {
+    fun startIrDetection(lifecycleOwner: LifecycleOwner) {
         viewModelScope.launch {
             _irUiState.value = IrUiState.Starting
 
-            val startResult = irDetectionRepository.startDetection()
+            val startResult = irDetectionRepository.startDetection(lifecycleOwner)
             if (startResult.isFailure) {
                 _irUiState.value = IrUiState.Error(
                     code = "E1003",

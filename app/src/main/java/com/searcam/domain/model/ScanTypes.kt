@@ -1,5 +1,8 @@
 package com.searcam.domain.model
 
+// retroPoints, irPoints, magneticReadings 필드에서 사용
+// (같은 패키지이므로 import 불필요)
+
 /**
  * 스캔 관련 보조 타입 모음
  *
@@ -132,6 +135,15 @@ data class LayerResult(
 
     /** 이 레이어에서 발견된 징후 목록 */
     val findings: List<Finding>,
+
+    /** 역반사 감지 포인트 (LENS 레이어만 사용) */
+    val retroPoints: List<RetroreflectionPoint> = emptyList(),
+
+    /** IR LED 감지 포인트 (IR 레이어만 사용) */
+    val irPoints: List<IrPoint> = emptyList(),
+
+    /** 자기장 측정값 이력 (MAGNETIC 레이어만 사용) */
+    val magneticReadings: List<MagneticReading> = emptyList(),
 ) {
     /** 레이어에서 양성(의심 징후 있음) 여부 — score > 0 이고 COMPLETED 상태 */
     val isPositive: Boolean get() = status == ScanStatus.COMPLETED && score > 0

@@ -307,11 +307,17 @@ class WifiScanner @Inject constructor(
     internal suspend fun scanSsdp(): List<NetworkDevice> = withContext(Dispatchers.IO) {
         val devices = mutableListOf<NetworkDevice>()
 
-        return@withContext try {
-            val socket = MulticastSocket(SSDP_PORT)
-            socket.soTimeout = SSDP_TIMEOUT_MS.toInt()
-            socket.timeToLive = 1 // 링크-로컬 범위 제한 (보안: 로컬 네트워크 외부 유출 방지)
+        val socket = try {
+            MulticastSocket(SSDP_PORT).apply {
+                soTimeout = SSDP_TIMEOUT_MS.toInt()
+                timeToLive = 1 // 링크-로컬 범위 제한 (보안: 로컬 네트워크 외부 유출 방지)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "[${Constants.ErrorCode.E2003}] SSDP 소켓 생성 실패")
+            return@withContext emptyList()
+        }
 
+        return@withContext try {
             val groupAddress = InetAddress.getByName(SSDP_MULTICAST_ADDRESS)
             socket.joinGroup(groupAddress)
 
@@ -343,14 +349,15 @@ class WifiScanner @Inject constructor(
                 // 정상 종료 — 타임아웃
             }
 
-            socket.leaveGroup(groupAddress)
-            socket.close()
+            try { socket.leaveGroup(groupAddress) } catch (_: Exception) { }
 
             Timber.d("SSDP 탐색 완료: ${devices.size}개 응답")
             devices
         } catch (e: Exception) {
             Timber.e(e, "[${Constants.ErrorCode.E2003}] SSDP 탐색 실패")
             emptyList()
+        } finally {
+            try { socket.close() } catch (_: Exception) { }
         }
     }
 

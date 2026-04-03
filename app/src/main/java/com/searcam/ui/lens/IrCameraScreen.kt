@@ -48,9 +48,11 @@ fun IrCameraScreen(
 ) {
     val irUiState by viewModel.irUiState.collectAsStateWithLifecycle()
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
     // 화면 진입/이탈 시 IR 탐지 시작/중단
-    DisposableEffect(Unit) {
-        viewModel.startIrDetection()
+    DisposableEffect(lifecycleOwner) {
+        viewModel.startIrDetection(lifecycleOwner)
         onDispose {
             viewModel.stopIrDetection()
         }

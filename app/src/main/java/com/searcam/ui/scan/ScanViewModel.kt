@@ -1,5 +1,6 @@
 package com.searcam.ui.scan
 
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.searcam.domain.model.NetworkDevice
@@ -120,7 +121,7 @@ class ScanViewModel @Inject constructor(
      *
      * 4개 레이어를 병렬로 실행한다.
      */
-    fun startFullScan() {
+    fun startFullScan(lifecycleOwner: LifecycleOwner) {
         if (_uiState.value is ScanUiState.Scanning) return
 
         scanJob = viewModelScope.launch {
@@ -130,13 +131,13 @@ class ScanViewModel @Inject constructor(
             )
 
             try {
-                runFullScanUseCase.invoke().collect { report ->
+                runFullScanUseCase.invoke(lifecycleOwner).collect { report ->
                     _uiState.value = ScanUiState.Success(report)
                     _events.emit(ScanUiEvent.NavigateToResult(report.id))
                 }
             } catch (e: Exception) {
                 _uiState.value = ScanUiState.Error(
-                    code = "E2002",
+                    code = "E2001",
                     message = "Full Scan 중 오류가 발생했습니다: ${e.message}",
                 )
             }
