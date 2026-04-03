@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        SearCam 앱 테마
+        Jetpack Compose를 사용하므로 View 시스템 테마는 최소화.
+        statusBarColor, windowBackground 등 기본값만 설정.
+    -->
+    <style name="Theme.SearCam" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- 상태바: 투명 (Compose에서 직접 제어) -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <!-- 내비게이션바: 투명 -->
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- 배경: 다크 테마 기본 배경색 (#0D1117) -->
+        <item name="android:windowBackground">@color/background_dark</item>
+        <!-- 전체 화면 레이아웃 활성화 -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+
+    <!--
+        스플래시 전용 테마
+        앱 시작 시 잠깐 표시되는 런처 아이콘 배경.
+    -->
+    <style name="Theme.SearCam.Splash" parent="Theme.SearCam">
+        <item name="android:windowBackground">@color/background_dark</item>
+    </style>
+</resources>

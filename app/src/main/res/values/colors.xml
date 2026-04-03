@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- View 시스템 테마에서 필요한 기본 색상 -->
+    <!-- Compose 테마는 ui/theme/Color.kt에서 관리 -->
+    <color name="background_dark">#0D1117</color>
+    <color name="background_light">#F8F9FA</color>
+    <color name="primary">#1565C0</color>
+    <color name="risk_safe">#2ECC71</color>
+    <color name="risk_caution">#F39C12</color>
+    <color name="risk_danger">#E67E22</color>
+    <color name="risk_critical">#E74C3C</color>
+</resources>

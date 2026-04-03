@@ -110,6 +110,12 @@ build_combined_md() {
   done
 
   info "병합 완료: ${count}개 챕터 → ${COMBINED}"
+
+  # 이미지 디렉토리를 output/ 에 심링크 (pandoc 상대경로 처리)
+  if [[ -d "${BOOK_DIR}/assets" && ! -e "${OUTPUT_DIR}/assets" ]]; then
+    ln -s "${BOOK_DIR}/assets" "${OUTPUT_DIR}/assets"
+    info "이미지 경로 연결: ${OUTPUT_DIR}/assets → ${BOOK_DIR}/assets"
+  fi
 }
 
 # 2. DOCX 생성
@@ -164,9 +170,9 @@ build_pdf() {
     --toc \
     --toc-depth=3 \
     --number-sections \
-    -V mainfont="Noto Sans KR" \
-    -V sansfont="Noto Sans KR" \
-    -V monofont="JetBrains Mono" \
+    -V mainfont="Apple SD Gothic Neo" \
+    -V sansfont="Apple SD Gothic Neo" \
+    -V monofont="Menlo" \
     -V fontsize=11pt \
     -V geometry:margin=25mm \
     -V linestretch=1.5 \

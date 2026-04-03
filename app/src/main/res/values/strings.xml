@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 앱 기본 -->
+    <string name="app_name">SearCam</string>
+    <string name="app_description">몰래카메라 탐지 앱</string>
+
+    <!-- 홈 화면 -->
+    <string name="home_title">SearCam</string>
+    <string name="home_subtitle">30초 안에 몰래카메라를 스크리닝합니다</string>
+    <string name="home_quick_scan">빠른 스캔</string>
+    <string name="home_full_scan">정밀 스캔</string>
+    <string name="home_lens_finder">렌즈 탐지</string>
+    <string name="home_reports">스캔 기록</string>
+
+    <!-- 스캔 화면 -->
+    <string name="scan_title_quick">빠른 스캔</string>
+    <string name="scan_title_full">정밀 스캔</string>
+    <string name="scan_scanning">스캔 중…</string>
+    <string name="scan_complete">스캔 완료</string>
+    <string name="scan_timeout">스캔 시간 초과</string>
+    <string name="scan_cancel">취소</string>
+    <string name="scan_retry">다시 스캔</string>
+
+    <!-- Layer 라벨 -->
+    <string name="layer_wifi">네트워크 스캔</string>
+    <string name="layer_lens">렌즈 탐지</string>
+    <string name="layer_emf">자기장 탐지</string>
+
+    <!-- 위험도 레벨 -->
+    <string name="risk_safe">안전</string>
+    <string name="risk_caution">주의</string>
+    <string name="risk_danger">위험</string>
+    <string name="risk_critical">위기</string>
+
+    <!-- 위험도 설명 -->
+    <string name="risk_safe_desc">의심스러운 기기가 탐지되지 않았습니다.</string>
+    <string name="risk_caution_desc">일부 의심 신호가 감지되었습니다. 주의가 필요합니다.</string>
+    <string name="risk_danger_desc">위험한 신호가 탐지되었습니다. 자세한 검사를 권고합니다.</string>
+    <string name="risk_critical_desc">강한 위험 신호가 탐지되었습니다. 즉시 점검하세요.</string>
+
+    <!-- 렌즈 탐지 화면 -->
+    <string name="lens_title">렌즈 탐지</string>
+    <string name="lens_flash_on">플래시 켜기</string>
+    <string name="lens_flash_off">플래시 끄기</string>
+    <string name="lens_guide">플래시를 켜고 카메라를 천천히 이동하며 반사되는 빛을 찾으세요.</string>
+    <string name="lens_point_detected">렌즈 반사 감지됨</string>
+
+    <!-- 자기장(EMF) 화면 -->
+    <string name="magnetic_title">자기장 탐지</string>
+    <string name="magnetic_calibrating">보정 중… (%d초)</string>
+    <string name="magnetic_baseline">기준값: %.1f μT</string>
+    <string name="magnetic_current">현재값: %.1f μT</string>
+    <string name="magnetic_delta">변화량: +%.1f μT</string>
+
+    <!-- 권한 요청 -->
+    <string name="permission_location_title">위치 권한 필요</string>
+    <string name="permission_location_desc">Wi-Fi 스캔을 위해 위치 권한이 필요합니다. (Android 10+ 정책)</string>
+    <string name="permission_camera_title">카메라 권한 필요</string>
+    <string name="permission_camera_desc">렌즈 탐지를 위해 카메라 접근이 필요합니다.</string>
+    <string name="permission_grant">권한 허용</string>
+    <string name="permission_deny">나중에</string>
+
+    <!-- 에러 메시지 -->
+    <string name="error_wifi_not_connected">Wi-Fi에 연결되어 있지 않습니다. 연결 후 다시 시도하세요.</string>
+    <string name="error_camera_unavailable">카메라를 사용할 수 없습니다.</string>
+    <string name="error_sensor_unavailable">이 기기는 자력계를 지원하지 않습니다. Layer 3는 비활성화됩니다.</string>
+    <string name="error_permission_denied">권한이 거부되었습니다. 설정에서 권한을 허용해 주세요.</string>
+    <string name="error_generic">오류가 발생했습니다. 다시 시도해 주세요.</string>
+
+    <!-- 리포트 화면 -->
+    <string name="report_title">스캔 기록</string>
+    <string name="report_empty">저장된 스캔 기록이 없습니다.</string>
+    <string name="report_export_pdf">PDF로 저장</string>
+    <string name="report_delete">삭제</string>
+    <string name="report_scan_at">스캔 시각</string>
+    <string name="report_location">위치</string>
+
+    <!-- 설정 화면 -->
+    <string name="settings_title">설정</string>
+    <string name="settings_sound">경고음</string>
+    <string name="settings_sound_desc">위험 탐지 시 경고음을 재생합니다</string>
+    <string name="settings_vibration">진동</string>
+    <string name="settings_vibration_desc">위험 탐지 시 진동 알림을 합니다</string>
+    <string name="settings_version">버전</string>
+
+    <!-- 온보딩 -->
+    <string name="onboarding_start">시작하기</string>
+    <string name="onboarding_skip">건너뛰기</string>
+    <string name="onboarding_next">다음</string>
+    <string name="onboarding_disclaimer_title">중요 안내</string>
+    <string name="onboarding_disclaimer_desc">SearCam은 1차 스크리닝 도구입니다. 100% 탐지를 보장하지 않으며, 의심스러운 경우 전문 탐지 장비 또는 경찰에 신고하세요.</string>
+    <string name="onboarding_agree">동의하고 시작</string>
+
+    <!-- 공통 버튼 -->
+    <string name="btn_ok">확인</string>
+    <string name="btn_cancel">취소</string>
+    <string name="btn_close">닫기</string>
+    <string name="btn_settings">설정으로 이동</string>
+</resources>
