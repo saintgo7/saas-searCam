@@ -32,34 +32,34 @@ BUILD_SCRIPT := $(BOOK_DIR)build.sh
 # ──────────────────────────────────────
 CHAPTERS := \
 	$(CHAPTERS_DIR)/ch01-problem-discovery.md \
-	$(CHAPTERS_DIR)/ch02-user-research.md \
-	$(CHAPTERS_DIR)/ch03-product-requirements.md \
-	$(CHAPTERS_DIR)/ch04-revenue-model.md \
-	$(CHAPTERS_DIR)/ch05-technical-requirements.md \
-	$(CHAPTERS_DIR)/ch06-system-architecture.md \
-	$(CHAPTERS_DIR)/ch07-technical-design.md \
-	$(CHAPTERS_DIR)/ch08-api-database.md \
-	$(CHAPTERS_DIR)/ch09-security-privacy.md \
+	$(CHAPTERS_DIR)/ch02-prd.md \
+	$(CHAPTERS_DIR)/ch03-trd-architecture.md \
+	$(CHAPTERS_DIR)/ch04-system-architecture.md \
+	$(CHAPTERS_DIR)/ch05-ui-ux-design.md \
+	$(CHAPTERS_DIR)/ch06-security-design.md \
+	$(CHAPTERS_DIR)/ch07-test-strategy.md \
+	$(CHAPTERS_DIR)/ch08-database-design.md \
+	$(CHAPTERS_DIR)/ch09-data-flow.md \
 	$(CHAPTERS_DIR)/ch10-project-setup.md \
 	$(CHAPTERS_DIR)/ch11-wifi-scan.md \
 	$(CHAPTERS_DIR)/ch12-lens-detection.md \
 	$(CHAPTERS_DIR)/ch13-emf-detection.md \
 	$(CHAPTERS_DIR)/ch14-cross-validation.md \
-	$(CHAPTERS_DIR)/ch15-ui-ux.md \
-	$(CHAPTERS_DIR)/ch16-report-checklist.md \
-	$(CHAPTERS_DIR)/ch17-test-strategy.md \
-	$(CHAPTERS_DIR)/ch18-cicd-pipeline.md \
-	$(CHAPTERS_DIR)/ch19-release-deploy.md \
-	$(CHAPTERS_DIR)/ch20-monitoring.md \
-	$(CHAPTERS_DIR)/ch21-marketing.md \
-	$(CHAPTERS_DIR)/ch22-analytics.md \
-	$(CHAPTERS_DIR)/ch23-accessibility-i18n.md \
-	$(CHAPTERS_DIR)/ch24-partnership.md \
-	$(CHAPTERS_DIR)/appendix-a-error-handling.md \
-	$(CHAPTERS_DIR)/appendix-b-performance.md \
-	$(CHAPTERS_DIR)/appendix-c-oui-database.md \
-	$(CHAPTERS_DIR)/appendix-d-risk-matrix.md \
-	$(CHAPTERS_DIR)/appendix-e-legal-compliance.md
+	$(CHAPTERS_DIR)/ch15-ui-implementation.md \
+	$(CHAPTERS_DIR)/ch16-room-implementation.md \
+	$(CHAPTERS_DIR)/ch17-pdf-report.md \
+	$(CHAPTERS_DIR)/ch18-testing.md \
+	$(CHAPTERS_DIR)/ch19-cicd.md \
+	$(CHAPTERS_DIR)/ch20-release.md \
+	$(CHAPTERS_DIR)/ch21-monitoring.md \
+	$(CHAPTERS_DIR)/ch22-legal-privacy.md \
+	$(CHAPTERS_DIR)/ch23-revenue-gtm.md \
+	$(CHAPTERS_DIR)/ch24-retrospective.md \
+	$(CHAPTERS_DIR)/appendix-a-oui-database.md \
+	$(CHAPTERS_DIR)/appendix-b-checklist.md \
+	$(CHAPTERS_DIR)/appendix-c-error-codes.md \
+	$(CHAPTERS_DIR)/appendix-d-api-reference.md \
+	$(CHAPTERS_DIR)/appendix-e-changelog.md
 
 # 실제 존재하는 챕터만 필터링
 EXISTING_CHAPTERS := $(wildcard $(CHAPTERS))
@@ -74,6 +74,7 @@ PDF      := $(OUTPUT_DIR)/book.pdf
 # ──────────────────────────────────────
 PANDOC_COMMON := \
 	--metadata-file=$(METADATA) \
+	--from markdown-yaml_metadata_block \
 	--toc \
 	--toc-depth=3 \
 	--number-sections
