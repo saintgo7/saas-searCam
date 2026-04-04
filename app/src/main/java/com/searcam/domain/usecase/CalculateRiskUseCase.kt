@@ -1,5 +1,7 @@
 package com.searcam.domain.usecase
 
+import javax.inject.Inject
+
 import com.searcam.domain.model.LayerResult
 import com.searcam.domain.model.LayerType
 import com.searcam.domain.model.ScanStatus
@@ -19,7 +21,7 @@ import com.searcam.domain.model.ScanStatus
  *      - 3개: × 1.5  (전 레이어 양성 — 고위험)
  *   4. 최종 점수 = clamp(weighted × correction, 0, 100)
  */
-class CalculateRiskUseCase {
+class CalculateRiskUseCase @Inject constructor() {
 
     /**
      * 레이어별 결과 Map을 받아 종합 위험도 점수(0~100)를 반환한다.

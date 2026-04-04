@@ -1,5 +1,7 @@
 package com.searcam.domain.usecase
 
+import javax.inject.Inject
+
 import com.searcam.domain.model.RetroreflectionPoint
 import com.searcam.domain.repository.IrDetectionRepository
 import com.searcam.domain.repository.LensDetectionRepository
@@ -20,7 +22,7 @@ import kotlinx.coroutines.flow.combine
  * 주의: 이 UseCase는 시작(startDetection) 및 종료(stopDetection)를 호출하지 않는다.
  *       LensViewModel이 생명주기에 맞춰 직접 관리해야 한다.
  */
-class RunLensFinderUseCase(
+class RunLensFinderUseCase @Inject constructor(
     private val lensDetectionRepository: LensDetectionRepository,
     private val irDetectionRepository: IrDetectionRepository,
 ) {

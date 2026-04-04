@@ -1,5 +1,7 @@
 package com.searcam.domain.usecase
 
+import javax.inject.Inject
+
 import com.searcam.domain.model.LayerResult
 import com.searcam.domain.model.LayerType
 import com.searcam.domain.model.RiskLevel
@@ -24,7 +26,7 @@ import java.util.UUID
  *   3. CalculateRiskUseCase로 위험도 산출
  *   4. ScanReport emit
  */
-class RunQuickScanUseCase(
+class RunQuickScanUseCase @Inject constructor(
     private val wifiScanRepository: WifiScanRepository,
     private val calculateRiskUseCase: CalculateRiskUseCase,
 ) {

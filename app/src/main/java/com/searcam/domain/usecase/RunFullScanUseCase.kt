@@ -1,5 +1,7 @@
 package com.searcam.domain.usecase
 
+import javax.inject.Inject
+
 import androidx.lifecycle.LifecycleOwner
 import com.searcam.domain.model.IrPoint
 import com.searcam.domain.model.LayerResult
@@ -41,7 +43,7 @@ import java.util.UUID
  *   3. 모든 레이어 완료 후 CalculateRiskUseCase로 위험도 산출
  *   4. ScanReport emit
  */
-class RunFullScanUseCase(
+class RunFullScanUseCase @Inject constructor(
     private val wifiScanRepository: WifiScanRepository,
     private val lensDetectionRepository: LensDetectionRepository,
     private val irDetectionRepository: IrDetectionRepository,

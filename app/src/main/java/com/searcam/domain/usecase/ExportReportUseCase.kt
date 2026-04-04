@@ -1,5 +1,7 @@
 package com.searcam.domain.usecase
 
+import javax.inject.Inject
+
 import com.searcam.domain.repository.ReportRepository
 
 /**
@@ -14,7 +16,7 @@ import com.searcam.domain.repository.ReportRepository
  *   3. ReportRepository.exportToPdf() 호출
  *   4. 저장된 파일 경로 반환
  */
-class ExportReportUseCase(
+class ExportReportUseCase @Inject constructor(
     private val reportRepository: ReportRepository,
 ) {
 
