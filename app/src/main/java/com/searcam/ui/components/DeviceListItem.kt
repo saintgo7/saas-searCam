@@ -134,7 +134,7 @@ private fun DeviceListItemPreview() {
                     mac = "28:57:BE:11:22:33",
                     hostname = "hikvision-cam",
                     vendor = "Hikvision",
-                    deviceType = DeviceType.SUSPECTED_CAMERA,
+                    deviceType = DeviceType.IP_CAMERA,
                     openPorts = listOf(554, 80),
                     services = listOf("_rtsp._tcp"),
                     riskScore = 72,

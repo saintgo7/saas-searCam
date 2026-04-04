@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.searcam.domain.model.RetroreflectionPoint
 import com.searcam.ui.theme.SearCamTheme
@@ -56,7 +57,7 @@ fun LensFinderScreen(
     val lensUiState by viewModel.lensUiState.collectAsStateWithLifecycle()
     val isFlashOn by viewModel.isFlashOn.collectAsStateWithLifecycle()
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     // 화면 진입/이탈 시 탐지 시작/중단
     DisposableEffect(lifecycleOwner) {

@@ -29,6 +29,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.searcam.domain.model.IrPoint
 import com.searcam.ui.theme.SearCamTheme
@@ -48,7 +49,7 @@ fun IrCameraScreen(
 ) {
     val irUiState by viewModel.irUiState.collectAsStateWithLifecycle()
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     // 화면 진입/이탈 시 IR 탐지 시작/중단
     DisposableEffect(lifecycleOwner) {

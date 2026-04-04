@@ -54,7 +54,7 @@ class RiskCalculator @Inject constructor(
         val finalScore = score.coerceIn(0, MAX_SCORE)
         val isCamera = finalScore >= CAMERA_THRESHOLD
 
-        Timber.d("위험도 계산 완료: ${device.ip} → $finalScore점 (카메라=$isCamera)")
+        Timber.d("위험도 계산 완료: ${device.ip} → ${finalScore}점 (카메라=$isCamera)")
 
         // 불변성 준수: copy()로 새 객체 반환
         return device.copy(

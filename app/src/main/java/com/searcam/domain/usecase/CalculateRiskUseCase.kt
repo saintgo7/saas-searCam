@@ -51,7 +51,7 @@ class CalculateRiskUseCase {
             } else {
                 layerResult.layerType.weightNoWifi
             }
-            weight * layerResult.score
+            (weight * layerResult.score).toDouble()
         }
 
         val positiveCount = completedLayers.count { it.isPositive }
