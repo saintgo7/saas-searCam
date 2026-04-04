@@ -1,0 +1,50 @@
+---
+title: "SearCam: Building a Hidden Camera Detector for Smartphones"
+subtitle: "A Complete Guide to Mobile App Development in the AI Era — From Concept to Launch"
+author:
+  - name: "[Author Name]"
+date: "2026"
+lang: en
+description: |
+  A technical memoir documenting the full journey of building SearCam —
+  from product planning to launch. Covers the design, implementation, deployment,
+  and growth strategy of a hidden camera detection app using Wi-Fi scanning,
+  lens detection, and EMF sensors.
+keywords:
+  - hidden camera detection
+  - Android app development
+  - Kotlin
+  - Clean Architecture
+  - mobile sensors
+  - security app
+  - startup
+
+# Typography (macOS default fonts)
+mainfont: "Georgia"
+sansfont: "Helvetica Neue"
+monofont: "Menlo"
+fontsize: 11pt
+
+# PDF settings (XeLaTeX)
+documentclass: book
+papersize: a5
+geometry:
+  - top=25mm
+  - bottom=25mm
+  - left=20mm
+  - right=20mm
+linestretch: 1.5
+numbersections: true
+toc: true
+toc-depth: 3
+colorlinks: true
+linkcolor: "blue"
+urlcolor: "blue"
+
+# Header/Footer
+header-includes:
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \fancyhead[LE]{\leftmark}
+  - \fancyhead[RO]{\rightmark}
+  - \fancyfoot[C]{\thepage}

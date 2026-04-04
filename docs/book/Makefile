@@ -2,30 +2,41 @@
 # SearCam 기술 서적 빌드 Makefile
 # ──────────────────────────────────────
 #
-# 사용법:
-#   make          - DOCX + PDF 모두 생성
+# 한국어 빌드:
+#   make          - KO DOCX + PDF 모두 생성
 #   make md       - 챕터 병합 (combined.md)
-#   make docx     - Word 문서 생성
-#   make pdf      - PDF 생성 (xelatex 필요)
+#   make docx     - Word 문서 생성 (한국어)
+#   make pdf      - PDF 생성 (한국어)
+#
+# 영어 빌드:
+#   make all-en   - EN DOCX + PDF 모두 생성
+#   make en-md    - 영어 챕터 병합 (combined-en.md)
+#   make en-docx  - Word 문서 생성 (영어)
+#   make en-pdf   - PDF 생성 (영어)
+#
+# 전체:
+#   make both     - 한국어 + 영어 전체 빌드
 #   make clean    - 출력 파일 삭제
 #   make check    - 의존성 확인
-#   make count    - 분량 통계
+#   make count    - 분량 통계 (한국어)
+#   make count-en - 분량 통계 (영어)
 #
 # 의존성:
 #   - pandoc 3.0+
 #   - xelatex (texlive-xetex)
-#   - Noto Sans KR, JetBrains Mono 폰트
 
 SHELL := /bin/bash
 
 # ──────────────────────────────────────
 # 경로
 # ──────────────────────────────────────
-BOOK_DIR    := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-CHAPTERS_DIR := $(BOOK_DIR)chapters
-OUTPUT_DIR   := $(BOOK_DIR)output
-METADATA     := $(BOOK_DIR)metadata.yaml
-BUILD_SCRIPT := $(BOOK_DIR)build.sh
+BOOK_DIR       := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+CHAPTERS_DIR   := $(BOOK_DIR)chapters
+CHAPTERS_EN_DIR := $(BOOK_DIR)chapters-en
+OUTPUT_DIR     := $(BOOK_DIR)output
+METADATA       := $(BOOK_DIR)metadata.yaml
+METADATA_EN    := $(BOOK_DIR)metadata-en.yaml
+BUILD_SCRIPT   := $(BOOK_DIR)build.sh
 
 # ──────────────────────────────────────
 # 챕터 파일 목록 (순서 유지)
@@ -64,10 +75,19 @@ CHAPTERS := \
 # 실제 존재하는 챕터만 필터링
 EXISTING_CHAPTERS := $(wildcard $(CHAPTERS))
 
-# 출력물
+# 영어 챕터 목록 (같은 파일명, 다른 디렉토리)
+CHAPTERS_EN := $(patsubst $(CHAPTERS_DIR)/%,$(CHAPTERS_EN_DIR)/%,$(CHAPTERS))
+EXISTING_CHAPTERS_EN := $(wildcard $(CHAPTERS_EN))
+
+# 출력물 (한국어)
 COMBINED := $(OUTPUT_DIR)/combined.md
 DOCX     := $(OUTPUT_DIR)/book.docx
 PDF      := $(OUTPUT_DIR)/book.pdf
+
+# 출력물 (영어)
+COMBINED_EN := $(OUTPUT_DIR)/combined-en.md
+DOCX_EN     := $(OUTPUT_DIR)/book-en.docx
+PDF_EN      := $(OUTPUT_DIR)/book-en.pdf
 
 # ──────────────────────────────────────
 # Pandoc 옵션
@@ -97,23 +117,63 @@ PANDOC_DOCX += --reference-doc=$(BOOK_DIR)templates/reference.docx
 endif
 
 # ──────────────────────────────────────
+# 영어 Pandoc 옵션
+# ──────────────────────────────────────
+PANDOC_EN_COMMON := \
+	--metadata-file=$(METADATA_EN) \
+	--from markdown-yaml_metadata_block \
+	--toc \
+	--toc-depth=3 \
+	--number-sections
+
+PANDOC_EN_PDF := \
+	$(PANDOC_EN_COMMON) \
+	--pdf-engine=xelatex \
+	-V mainfont="Georgia" \
+	-V sansfont="Helvetica Neue" \
+	-V monofont="Menlo" \
+	-V fontsize=11pt \
+	-V geometry:margin=25mm \
+	-V linestretch=1.5
+
+PANDOC_EN_DOCX := $(PANDOC_EN_COMMON)
+
+ifneq ($(wildcard $(BOOK_DIR)templates/reference-en.docx),)
+PANDOC_EN_DOCX += --reference-doc=$(BOOK_DIR)templates/reference-en.docx
+endif
+
+# ──────────────────────────────────────
 # 기본 타깃
 # ──────────────────────────────────────
-.PHONY: all md docx pdf clean check count help
+.PHONY: all md docx pdf all-en en-md en-docx en-pdf both clean check count count-en help
 
 all: docx pdf
+
+all-en: en-docx en-pdf
+
+both: all all-en
 
 help:
 	@echo "SearCam 기술 서적 빌드"
 	@echo ""
-	@echo "타깃:"
-	@echo "  make          DOCX + PDF 모두 생성"
+	@echo "한국어 빌드:"
+	@echo "  make          DOCX + PDF 모두 생성 (한국어)"
 	@echo "  make md       챕터 병합 (combined.md)"
-	@echo "  make docx     Word 문서 생성"
-	@echo "  make pdf      PDF 생성 (xelatex 필요)"
+	@echo "  make docx     Word 문서 생성 (한국어)"
+	@echo "  make pdf      PDF 생성 (한국어)"
+	@echo ""
+	@echo "영어 빌드:"
+	@echo "  make all-en   DOCX + PDF 모두 생성 (영어)"
+	@echo "  make en-md    챕터 병합 (combined-en.md)"
+	@echo "  make en-docx  Word 문서 생성 (영어)"
+	@echo "  make en-pdf   PDF 생성 (영어)"
+	@echo ""
+	@echo "전체:"
+	@echo "  make both     한국어 + 영어 전체 빌드"
 	@echo "  make clean    출력 파일 삭제"
 	@echo "  make check    의존성 확인"
-	@echo "  make count    분량 통계"
+	@echo "  make count    분량 통계 (한국어)"
+	@echo "  make count-en 분량 통계 (영어)"
 
 # ──────────────────────────────────────
 # 빌드 규칙
@@ -122,34 +182,75 @@ help:
 $(OUTPUT_DIR):
 	@mkdir -p $(OUTPUT_DIR)
 
+# ──────────────────────────────────────
+# 한국어 빌드 규칙
+# ──────────────────────────────────────
+
 # 챕터 병합
 md: $(COMBINED)
 
 $(COMBINED): $(BOOK_DIR)README.md $(EXISTING_CHAPTERS) $(METADATA) | $(OUTPUT_DIR)
-	@echo "[INFO] 챕터 파일 병합 중..."
+	@echo "[KO] 챕터 파일 병합 중..."
 	@cat $(BOOK_DIR)README.md > $(COMBINED)
 	@echo -e "\n\n\\\\newpage\n\n" >> $(COMBINED)
 	@for f in $(EXISTING_CHAPTERS); do \
 		cat "$$f" >> $(COMBINED); \
 		echo -e "\n\n\\\\newpage\n\n" >> $(COMBINED); \
 	done
-	@echo "[INFO] 병합 완료: $(COMBINED) ($(words $(EXISTING_CHAPTERS))개 챕터)"
+	@echo "[KO] 병합 완료: $(COMBINED) ($(words $(EXISTING_CHAPTERS))개 챕터)"
 
 # DOCX 생성
 docx: $(DOCX)
 
 $(DOCX): $(COMBINED) $(METADATA) | $(OUTPUT_DIR)
-	@echo "[INFO] DOCX 생성 중..."
+	@echo "[KO] DOCX 생성 중..."
 	pandoc $(COMBINED) $(PANDOC_DOCX) -o $(DOCX)
-	@echo "[INFO] DOCX 생성 완료: $(DOCX)"
+	@echo "[KO] DOCX 생성 완료: $(DOCX)"
 
 # PDF 생성
 pdf: $(PDF)
 
 $(PDF): $(COMBINED) $(METADATA) | $(OUTPUT_DIR)
-	@echo "[INFO] PDF 생성 중 (xelatex)..."
+	@echo "[KO] PDF 생성 중 (xelatex)..."
 	pandoc $(COMBINED) $(PANDOC_PDF) -o $(PDF)
-	@echo "[INFO] PDF 생성 완료: $(PDF)"
+	@echo "[KO] PDF 생성 완료: $(PDF)"
+
+# ──────────────────────────────────────
+# 영어 빌드 규칙
+# ──────────────────────────────────────
+
+# 영어 챕터 병합
+en-md: $(COMBINED_EN)
+
+$(COMBINED_EN): $(EXISTING_CHAPTERS_EN) $(METADATA_EN) | $(OUTPUT_DIR)
+	@echo "[EN] Merging chapters..."
+	@if [ -f "$(BOOK_DIR)README-en.md" ]; then \
+		cat "$(BOOK_DIR)README-en.md" > $(COMBINED_EN); \
+	else \
+		cat $(BOOK_DIR)README.md > $(COMBINED_EN); \
+	fi
+	@echo -e "\n\n\\\\newpage\n\n" >> $(COMBINED_EN)
+	@for f in $(EXISTING_CHAPTERS_EN); do \
+		cat "$$f" >> $(COMBINED_EN); \
+		echo -e "\n\n\\\\newpage\n\n" >> $(COMBINED_EN); \
+	done
+	@echo "[EN] Merged: $(COMBINED_EN) ($(words $(EXISTING_CHAPTERS_EN)) chapters)"
+
+# 영어 DOCX
+en-docx: $(DOCX_EN)
+
+$(DOCX_EN): $(COMBINED_EN) $(METADATA_EN) | $(OUTPUT_DIR)
+	@echo "[EN] Generating DOCX..."
+	pandoc $(COMBINED_EN) $(PANDOC_EN_DOCX) -o $(DOCX_EN)
+	@echo "[EN] DOCX done: $(DOCX_EN)"
+
+# 영어 PDF
+en-pdf: $(PDF_EN)
+
+$(PDF_EN): $(COMBINED_EN) $(METADATA_EN) | $(OUTPUT_DIR)
+	@echo "[EN] Generating PDF (xelatex)..."
+	pandoc $(COMBINED_EN) $(PANDOC_EN_PDF) -o $(PDF_EN)
+	@echo "[EN] PDF done: $(PDF_EN)"
 
 # ──────────────────────────────────────
 # 유틸리티
@@ -175,7 +276,7 @@ check:
 	@echo "  미작성 챕터: $$(( $(words $(CHAPTERS)) - $(words $(EXISTING_CHAPTERS)) ))개"
 
 count:
-	@echo "분량 통계:"
+	@echo "[KO] 분량 통계:"
 	@if [ -f "$(COMBINED)" ]; then \
 		words=$$(wc -w < "$(COMBINED)"); \
 		lines=$$(wc -l < "$(COMBINED)"); \
@@ -192,4 +293,24 @@ count:
 	@for f in $(EXISTING_CHAPTERS); do \
 		lines=$$(wc -l < "$$f" 2>/dev/null || echo 0); \
 		printf "  %-40s %s줄\n" "$$(basename $$f)" "$$lines"; \
+	done
+
+count-en:
+	@echo "[EN] Word count:"
+	@if [ -f "$(COMBINED_EN)" ]; then \
+		words=$$(wc -w < "$(COMBINED_EN)"); \
+		lines=$$(wc -l < "$(COMBINED_EN)"); \
+		chars=$$(wc -c < "$(COMBINED_EN)"); \
+		echo "  Words: $${words}"; \
+		echo "  Lines: $${lines}"; \
+		echo "  Chars: $${chars}"; \
+		echo "  Est. pages: $$(( words / 250 )) pages (250 words/page)"; \
+	else \
+		echo "  combined-en.md not found. Run 'make en-md' first."; \
+	fi
+	@echo ""
+	@echo "Per-chapter word count:"
+	@for f in $(EXISTING_CHAPTERS_EN); do \
+		words=$$(wc -w < "$$f" 2>/dev/null || echo 0); \
+		printf "  %-40s %s words\n" "$$(basename $$f)" "$$words"; \
 	done
