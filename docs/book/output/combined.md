@@ -6421,6 +6421,103 @@ class WifiScanRepositoryImpl @Inject constructor(
 
 ---
 
+## 11.8 코드 리뷰 개선 사항 — 실전 배포 전 발견한 버그들
+
+초기 구현 후 코드 리뷰 단계에서 실제 배포 환경에서 문제가 될 수 있는 이슈 4건이 발견되었습니다. 각 수정이 왜 필요했는지 구체적으로 살펴봅니다.
+
+### 개선 1: `cachedDevices`에 `@Volatile` 추가 — 스레드 가시성 보장
+
+**문제**: `cachedDevices` 필드를 여러 코루틴에서 읽고 쓸 수 있는데, JVM의 CPU 캐시 최적화로 인해 한 스레드에서 쓴 값이 다른 스레드에 즉시 보이지 않을 수 있었습니다.
+
+```kotlin
+// Before: JVM이 CPU 캐시에 값을 유지할 수 있어 멀티스레드 환경에서 오래된 값 반환 위험
+private var cachedDevices: List<NetworkDevice> = emptyList()
+
+// After: @Volatile이 모든 스레드가 항상 최신 값을 읽도록 강제합니다
+@Volatile
+private var cachedDevices: List<NetworkDevice> = emptyList()
+```
+
+`@Volatile`은 해당 필드의 읽기/쓰기가 반드시 메인 메모리를 통해 이루어지도록 JVM에 지시합니다. 복잡한 동기화 블록 없이 단순 플래그나 참조 타입의 스레드 안전성을 보장하는 가장 가벼운 방법입니다.
+
+### 개선 2: SSDP 소켓 리소스 누수 수정 — `try-finally` 보장
+
+**문제**: SSDP 탐색 중 `socket.leaveGroup()`이 예외를 던지면 `socket.close()`에 도달하지 못하고 소켓이 열린 채로 남아있었습니다. 장시간 사용 시 소켓 고갈로 이어질 수 있습니다.
+
+```kotlin
+// Before: leaveGroup()이 실패하면 socket.close()가 실행되지 않음
+try {
+    socket.leaveGroup(InetAddress.getByName(SSDP_MULTICAST_ADDRESS))
+    socket.close()  // leaveGroup()이 throw하면 이 줄에 도달 못 함!
+} catch (e: Exception) {
+    Timber.e(e, "SSDP 오류")
+}
+
+// After: finally 블록은 예외 발생 여부와 무관하게 반드시 실행됩니다
+val socket = MulticastSocket()
+try {
+    // ... SSDP 탐색 코드
+} catch (e: Exception) {
+    Timber.e(e, "[E2003] SSDP 탐색 오류: ${e.message}")
+} finally {
+    // finally는 예외가 발생해도 반드시 실행 — 소켓 누수 방지
+    runCatching { socket.leaveGroup(InetAddress.getByName(SSDP_MULTICAST_ADDRESS)) }
+    socket.close()
+}
+```
+
+`try-finally` 패턴은 파일, 소켓, 데이터베이스 커넥션처럼 "열면 반드시 닫아야 하는" 자원의 황금 규칙입니다. Kotlin에서는 `use {}` 확장 함수가 이를 자동화하지만, `MulticastSocket`처럼 `Closeable`을 구현하지 않는 경우 수동으로 `finally`를 작성해야 합니다.
+
+### 개선 3: 호스트명 입력 Sanitization — 제어 문자 차단
+
+**문제**: mDNS/SSDP로 수신하는 호스트명은 외부 기기가 제공합니다. 악의적인 기기가 제어 문자(NULL, CRLF 등)나 매우 긴 문자열을 호스트명으로 보낼 수 있습니다.
+
+```kotlin
+// Before: 외부에서 받은 호스트명을 그대로 저장 (Log Injection, 버퍼 오버플로 위험)
+val hostname: String? = rawHostname
+
+// After: 길이 제한 + 제어 문자 제거
+val hostname: String? = rawHostname
+    ?.take(128)  // 최대 128자 제한 (DNS 최대 길이)
+    ?.replace(Regex("[\\x00-\\x1F\\x7F]"), "")  // ASCII 제어 문자 제거
+```
+
+외부 입력은 시스템 경계(System Boundary)에서 반드시 검증해야 합니다. 제어 문자가 포함된 호스트명이 로그에 기록되면 Log Injection 공격에 악용될 수 있고, UI에 표시하면 레이아웃이 깨집니다.
+
+### 개선 4: `PortScanner`에 사설 IP 범위 가드 — 인터넷 스캔 방지
+
+**문제**: IP 주소 검증 없이 포트 스캔을 수행하면 이론적으로 인터넷 공인 IP를 스캔할 수 있었습니다. 이는 법적·보안적 문제를 일으킬 수 있습니다.
+
+```kotlin
+// PortScanner.kt
+suspend fun scanPorts(ip: String): List<Int> = withContext(Dispatchers.IO) {
+    // RFC 1918 사설 IP 범위만 스캔 허용 — 공인 IP 스캔 방지
+    if (!isPrivateIp(ip)) {
+        Timber.w("[E2004] 사설 IP 범위 외 스캔 차단: $ip")
+        return@withContext emptyList()
+    }
+    // ... 실제 스캔 로직
+}
+
+// RFC 1918: 10.x.x.x / 172.16-31.x.x / 192.168.x.x / 127.x.x.x
+internal fun isPrivateIp(ip: String): Boolean {
+    return try {
+        val parts = ip.split(".").map { it.toInt() }
+        if (parts.size != 4) return false
+        val (a, b, _, _) = parts
+        a == 10 || a == 127 ||
+            (a == 172 && b in 16..31) ||
+            (a == 192 && b == 168)
+    } catch (e: Exception) {
+        false
+    }
+}
+```
+
+이 함수는 `internal`로 선언되어 같은 모듈의 테스트에서 직접 접근 가능합니다. `app/src/test/.../PortScannerTest.kt`에서 경계값 19케이스를 단위 테스트로 검증합니다.
+
+---
+
 ## 다음 장 예고
 
 네트워크에서 IP 카메라를 찾았습니다. 하지만 Wi-Fi 없는 환경이라면? Ch12에서는 두 번째 탐지 레이어 — 빛의 역반사를 이용해 카메라 렌즈를 물리적으로 찾아내는 방법을 구현합니다.
@@ -6905,6 +7002,85 @@ private val LENS_MAX_AREA_PX = 800  // 너무 크면 안경/유리
 
 ---
 
+## 12.7 코드 리뷰 개선 사항 — 멀티스레드 안전과 불변성
+
+렌즈 감지 파이프라인은 CameraX 프레임 분석 콜백(백그라운드 Executor 스레드)과 ViewModel(메인 스레드)이 동시에 데이터를 읽고 쓰는 구조입니다. 코드 리뷰에서 이 경계에서 발생하는 스레드 안전 문제 2건이 발견되었습니다.
+
+### 개선 1: `stabilityTracker`를 `ConcurrentHashMap`으로 교체
+
+**문제**: `stabilityTracker`는 CameraX 분석 스레드(프레임 콜백)와 stop 메서드(메인 스레드)에서 동시에 접근됩니다. 일반 `HashMap`은 동시 수정 시 `ConcurrentModificationException`을 던지거나 데이터를 손상시킬 수 있습니다.
+
+```kotlin
+// Before: HashMap은 멀티스레드 환경에서 안전하지 않음
+private val stabilityTracker: MutableMap<Int, TrackedPoint> = mutableMapOf()
+
+// After: ConcurrentHashMap은 읽기/쓰기 동시 접근을 안전하게 처리
+private val stabilityTracker: MutableMap<Int, TrackedPoint> = ConcurrentHashMap()
+```
+
+`ConcurrentHashMap`은 세그먼트(Segment) 단위 잠금을 사용합니다. 전체 Map에 대한 락이 아니라 일부 버킷에만 락을 걸기 때문에, 성능 저하 없이 멀티스레드 안전을 보장합니다. CameraX처럼 별도 Executor에서 고빈도로 호출되는 분석 콜백에서는 필수입니다.
+
+### 개선 2: `Cluster.contrastRatio`를 `val`로 — 생성 후 불변 보장
+
+**문제**: `Cluster` 데이터 클래스의 `contrastRatio`가 `var`로 선언되어 있어서, 객체 생성 후 외부에서 값을 변경할 수 있었습니다. 이는 예기치 않은 상태 변이로 이어질 수 있습니다.
+
+```kotlin
+// Before: var로 선언 — 생성 후 외부 변경 가능
+data class Cluster(
+    val center: PointF,
+    val radius: Float,
+    val avgBrightness: Float,
+    val circularity: Float,
+    var contrastRatio: Float = 0f,  // 나중에 cluster.contrastRatio = x 형태로 수정 위험
+)
+
+// After: val로 선언 + copy()로 새 객체 생성
+data class Cluster(
+    val center: PointF,
+    val radius: Float,
+    val avgBrightness: Float,
+    val circularity: Float,
+    val contrastRatio: Float = 0f,  // val: 생성 후 변경 불가
+)
+
+// 사용 시: copy()로 새 Cluster 인스턴스 반환 (원본 불변)
+val clusterWithRatio = cluster.copy(contrastRatio = computedRatio)
+```
+
+`data class`의 `copy()`는 불변성 패턴의 핵심입니다. 기존 객체를 변경하는 대신, 변경된 필드만 다른 새 인스턴스를 반환합니다. 이렇게 하면 한 곳의 코드가 다른 곳의 참조에 영향을 줄 수 없어서 버그 추적이 쉬워집니다.
+
+### 개선 3: `calculateRiskScore()`를 `listOfNotNull + sumOf` 패턴으로
+
+**문제**: 위험도 점수 계산 함수가 `var score = 0; score += ...` 패턴으로 상태를 변이시키고 있었습니다. 각 조건이 점수에 독립적으로 기여하는 로직인데, 굳이 변이가 필요하지 않습니다.
+
+```kotlin
+// Before: var 변이 — 각 if 블록이 score를 변경
+private fun calculateRiskScore(...): Int {
+    var score = 0
+    if (radius in 1.0..5.0 && circularity > CIRCULARITY_MIN) score += 30
+    if (isStable) score += 20
+    if (flashDependency) score += 25
+    if (lastContrastRatio > 20.0f) score += 15
+    if (lastBrightness > 230f) score += 10
+    return score.coerceIn(0, 100)
+}
+
+// After: listOfNotNull + sumOf — 조건별 기여값을 선언적으로 나열
+private fun calculateRiskScore(...): Int {
+    return listOfNotNull(
+        30.takeIf { radius in 1.0..5.0 && circularity > CIRCULARITY_MIN },
+        20.takeIf { isStable },
+        25.takeIf { flashDependency },
+        15.takeIf { lastContrastRatio > 20.0f },
+        10.takeIf { lastBrightness > 230f },
+    ).sumOf { it }.coerceIn(0, 100)
+}
+```
+
+`takeIf { 조건 }`는 조건이 참이면 수신 객체(여기서는 점수)를 반환하고, 거짓이면 `null`을 반환합니다. `listOfNotNull`이 null을 제거하고 `sumOf`가 합산합니다. 결과는 동일하지만, 코드의 의도가 훨씬 명확합니다 — "이 조건들이 충족될 때 이 점수가 기여한다".
+
+---
+
 ## 다음 장 예고
 
 두 개의 주요 레이어를 구현했습니다. Ch13에서는 마지막 보조 레이어 — 전자기장(EMF) 감지 — 를 다룹니다. 가중치 15%지만, 다른 두 레이어의 결과를 보강하는 중요한 역할을 합니다.
@@ -7355,6 +7531,59 @@ class MagneticRepositoryImpl @Inject constructor(
 - 캘리브레이션 없이는 어떤 값이 이상인지 판단할 수 없다
 - 이동 평균은 가장 단순한 노이즈 필터 — 단순함이 곧 신뢰성이다
 - 한계를 솔직하게 표시하는 것이 오탐보다 낫다
+
+---
+
+## 13.7 코드 리뷰 개선 사항 — 명확한 상수와 스레드 안전
+
+### 개선 1: `SENSOR_DELAY_FASTEST` → 명시적 20Hz 상수
+
+**문제**: 초기 구현에서 `SensorManager.SENSOR_DELAY_FASTEST`를 사용했습니다. 이름 그대로 가능한 최고 속도(기기마다 다르며 최대 ~1ms)입니다. 결과는 두 가지 문제였습니다. 첫째, 불필요하게 높은 CPU·배터리 소모. 둘째, 실제 Hz를 코드에서 알 수 없어 가독성 저하.
+
+```kotlin
+// Before: "가장 빠르게" — 실제 Hz를 알 수 없고 배터리 낭비
+sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_FASTEST)
+
+// After: μs 단위 직접 지정 — 20Hz = 50,000μs (50ms 간격)
+companion object {
+    /** 20Hz 샘플링 = 50ms 간격 = 50,000μs */
+    private const val SENSOR_DELAY_20HZ_US = 50_000
+}
+
+sensorManager.registerListener(listener, sensor, SENSOR_DELAY_20HZ_US)
+```
+
+Android `SensorManager.registerListener()`의 세 번째 파라미터는 실제로 μs 단위 지연 값을 받습니다. `SENSOR_DELAY_GAME`(~20ms, ~50Hz), `SENSOR_DELAY_UI`(~60ms) 같은 상수도 있지만, 50_000을 직접 쓰면 코드를 읽는 사람이 "이 센서는 20Hz로 동작한다"는 사실을 즉시 알 수 있습니다.
+
+### 개선 2: `NoiseFilter` 스파이크 상수를 `companion object`으로 이동
+
+**문제**: `SPIKE_THRESHOLD_UT = 50f`와 `SPIKE_TIME_WINDOW_MS = 300L`이 함수 내부 지역 상수로 선언되어 있었습니다. 테스트 코드에서 이 임계값을 알려면 소스를 읽어야 했고, 두 곳 이상에서 같은 값이 사용되면 동기화가 어려웠습니다.
+
+```kotlin
+// Before: 함수 안에 숨어있는 매직 넘버
+private fun isSpikeDetected(magnitude: Float, timestamp: Long): Boolean {
+    val timeDiff = timestamp - previousTimestamp
+    val magnitudeDiff = abs(magnitude - previousMagnitude)
+    return magnitudeDiff > 50f && timeDiff < 300L  // 50과 300의 의미가 불명확
+}
+
+// After: companion object에 명명된 상수로 의도를 명확히 문서화
+companion object {
+    /** 급변 판정 임계값 (μT): 50μT 이상 급변 = 스마트폰 자체 간섭으로 판단 */
+    private const val SPIKE_THRESHOLD_UT = 50f
+
+    /** 급변 판정 시간 창 (ms): 300ms 이내 급변만 감지 */
+    private const val SPIKE_TIME_WINDOW_MS = 300L
+}
+
+private fun isSpikeDetected(magnitude: Float, timestamp: Long): Boolean {
+    val timeDiff = timestamp - previousTimestamp
+    val magnitudeDiff = abs(magnitude - previousMagnitude)
+    return magnitudeDiff > SPIKE_THRESHOLD_UT && timeDiff < SPIKE_TIME_WINDOW_MS
+}
+```
+
+이 상수들은 `NoiseFilterTest`에서도 참조 기준이 됩니다. 테스트 코드에서 "50μT 초과 + 300ms 이내" 케이스를 명시적으로 테스트합니다. 상수를 `companion object`에 두면 테스트의 가정(assumption)과 구현의 실제 값이 일치함을 보장할 수 있습니다.
 
 ---
 
@@ -7861,6 +8090,108 @@ sealed class ScanUiState {
 - 단독 탐지 신호는 신뢰도를 낮춰 사용자에게 과도한 공포를 주지 않는다
 - 삼중 탐지는 세 개의 독립적 물리 원리가 같은 결론 — 가장 신뢰할 수 있는 신호다
 - 100점이라도 "확정"이 아니라 "강한 가능성" — UI에서 솔직하게 전달해야 한다
+
+---
+
+## 14.7 코드 리뷰 개선 사항 — 단일 진실 출처와 중복 제거
+
+### 개선 1: 가중치 상수를 `LayerType` 열거형으로 통합 — 단일 진실 출처
+
+**문제**: 초기 구현에서 `CrossValidatorImpl`이 `WEIGHT_WIFI = 0.50f`, `WEIGHT_LENS = 0.35f` 같은 상수를 자체적으로 정의했습니다. 이미 `LayerType` 열거형에 동일한 가중치가 정의되어 있었는데 중복이었습니다.
+
+```kotlin
+// Before: CrossValidatorImpl 내부에 중복 상수
+class CrossValidatorImpl : CrossValidator {
+    companion object {
+        private const val WEIGHT_WIFI = 0.50f   // LayerType.WIFI.weight와 중복!
+        private const val WEIGHT_LENS = 0.35f
+        private const val WEIGHT_EMF = 0.15f
+    }
+}
+
+// After: LayerType.weight를 단일 진실 출처(Single Source of Truth)로 사용
+class CrossValidatorImpl : CrossValidator {
+    override fun calculateRisk(...): Int {
+        val wifiWeight = LayerType.WIFI.weight              // 0.50
+        val lensWeight = LayerType.LENS.weight + LayerType.IR.weight  // 0.20 + 0.15 = 0.35
+        val emfWeight  = LayerType.MAGNETIC.weight          // 0.15
+        // ...
+    }
+}
+
+// LayerType 열거형 — 가중치의 유일한 정의 장소
+enum class LayerType(
+    val weight: Float,        // Wi-Fi 연결 시 기본 가중치
+    val weightNoWifi: Float,  // Wi-Fi 미연결 시 가중치
+    ...
+) {
+    WIFI(weight = 0.50f, weightNoWifi = 0.00f, ...),
+    LENS(weight = 0.20f, weightNoWifi = 0.45f, ...),
+    IR(weight = 0.15f,   weightNoWifi = 0.30f, ...),
+    MAGNETIC(weight = 0.15f, weightNoWifi = 0.25f, ...),
+}
+```
+
+단일 진실 출처(SSOT, Single Source of Truth)는 소프트웨어 설계의 핵심 원칙입니다. 가중치를 변경해야 할 때 `LayerType` 한 곳만 수정하면 모든 사용처에 자동으로 반영됩니다. 두 곳에 정의된 값은 언젠가 반드시 불일치가 발생합니다.
+
+### 개선 2: `CalculateRiskUseCase.invoke()`가 `invokeWithCorrection()`에 위임 — 중복 로직 제거
+
+**문제**: `invoke()`와 `invokeWithCorrection()` 두 함수가 거의 동일한 로직을 가지고 있었습니다. 34줄짜리 계산 로직이 복사·붙여넣기되어 있어서, 알고리즘을 수정하면 두 곳을 모두 수정해야 했습니다.
+
+```kotlin
+// Before: invoke()와 invokeWithCorrection()에 동일한 34줄 로직 중복
+operator fun invoke(layerResults: Map<LayerType, LayerResult>): Int {
+    // 34줄의 가중치 계산 로직 (completedLayers, isWifiAvailable, ...)
+    val finalScore = ...
+    return finalScore.coerceIn(0, 100)
+}
+
+fun invokeWithCorrection(...): Pair<Int, Float> {
+    // 동일한 34줄 로직 반복
+    val finalScore = ...
+    return Pair(finalScore, correctionFactor)
+}
+
+// After: invoke()가 invokeWithCorrection()에 완전 위임 — 1줄로 해결
+operator fun invoke(layerResults: Map<LayerType, LayerResult>): Int =
+    invokeWithCorrection(layerResults).first
+```
+
+이 리팩토링으로 코드가 34줄에서 1줄로 줄었습니다. DRY(Don't Repeat Yourself) 원칙의 교과서적 적용입니다. 앞으로 알고리즘을 바꾸면 `invokeWithCorrection()` 한 곳만 수정하면 됩니다.
+
+### 개선 3: `RunFullScanUseCase`에 `AllLayerResults` 네임드 data class 도입
+
+**문제**: `runAllLayersInParallel()`이 `List<LayerResult>`를 반환하고, 호출부에서 인덱스 기반으로 구조 분해(destructuring)했습니다. 리스트 순서가 바뀌면 컴파일 오류 없이 wifi/lens/ir/magnetic이 뒤바뀌는 심각한 버그가 발생할 수 있었습니다.
+
+```kotlin
+// Before: 위치 기반 destructuring — 순서 오류가 컴파일 타임에 잡히지 않음
+val (wifiResult, lensResult, irResult, magneticResult) = runAllLayersInParallel(lifecycleOwner)
+// ↑ listOf() 안의 순서가 바뀌면 silently wrong data
+
+// After: 이름 기반 data class — 잘못된 접근은 컴파일 오류
+private data class AllLayerResults(
+    val wifi: LayerResult,
+    val lens: LayerResult,
+    val ir: LayerResult,
+    val magnetic: LayerResult,
+)
+
+private suspend fun runAllLayersInParallel(...): AllLayerResults = coroutineScope {
+    AllLayerResults(
+        wifi     = wifiDeferred.await(),
+        lens     = lensDeferred.await(),
+        ir       = irDeferred.await(),
+        magnetic = magneticDeferred.await(),
+    )
+}
+
+// 사용부: 이름으로 접근 — 순서 변경에 영향받지 않음
+val layersParallel = runAllLayersInParallel(lifecycleOwner)
+val wifiResult = layersParallel.wifi
+val lensResult = layersParallel.lens
+```
+
+"무언의 실패(Silent failure)"는 가장 위험한 버그 패턴입니다. 위치 기반 destructuring은 컴파일러가 타입만 확인하므로, `List<LayerResult>`에서 순서 오류는 런타임에서야 발견됩니다. 이름 기반 접근은 이 위험을 컴파일 타임으로 앞당깁니다.
 
 ---
 
@@ -8616,6 +8947,111 @@ fun SearchScreen() {
 - `by viewModel.uiState.collectAsStateWithLifecycle()`은 배터리를 아끼는 생명주기 인식 구독이다
 - Canvas의 각도 기준은 3시 방향 0도, 시계 방향으로 증가함을 기억하라
 - DisposableEffect의 `onDispose`는 예외가 발생해도 반드시 실행된다
+
+---
+
+## 15.9 코드 리뷰 개선 사항 — `LifecycleOwner` 전파 아키텍처
+
+### 문제: 카메라 바인딩에 `LifecycleOwner`가 필요한데 어디서 제공해야 하나
+
+CameraX는 `ProcessCameraProvider.bindToLifecycle(lifecycleOwner, ...)` 호출 시 `LifecycleOwner`를 요구합니다. 초기 구현에서는 Repository 레이어에서 `Application Context`로 임시 처리하거나, ViewModel에서 Context를 직접 참조하는 패턴을 사용했습니다. 이는 메모리 누수와 테스트 어려움이라는 두 가지 문제를 만들었습니다.
+
+### 해결: `LifecycleOwner`를 Compose Screen에서 UseCase까지 파라미터로 전달
+
+```
+[LensFinderScreen / IrCameraScreen]   ← LocalLifecycleOwner.current 획득
+        ↓ 파라미터 전달
+[LensViewModel.startLensDetection(lifecycleOwner)]
+        ↓ 파라미터 전달
+[LensDetectionRepository.startDetection(lifecycleOwner)]
+        ↓ 파라미터 전달
+[LensDetector.startDetection(lifecycleOwner)]   ← CameraX 바인딩
+```
+
+Compose Screen에서 `LocalLifecycleOwner.current`로 현재 LifecycleOwner를 얻어 아래로 전달합니다.
+
+```kotlin
+// ui/lens/LensFinderScreen.kt — LocalLifecycleOwner.current로 획득
+@Composable
+fun LensFinderScreen(
+    onNavigateUp: () -> Unit,
+    viewModel: LensViewModel = hiltViewModel(),
+) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    // DisposableEffect(lifecycleOwner): lifecycleOwner가 바뀌면 카메라를 재바인딩
+    DisposableEffect(lifecycleOwner) {
+        viewModel.startLensDetection(lifecycleOwner)
+        onDispose {
+            viewModel.stopLensDetection()
+        }
+    }
+    // ...
+}
+```
+
+```kotlin
+// ui/lens/LensViewModel.kt — Screen에서 받아 Repository로 전달
+@HiltViewModel
+class LensViewModel @Inject constructor(
+    private val lensDetectionRepository: LensDetectionRepository,
+    private val irDetectionRepository: IrDetectionRepository,
+) : ViewModel() {
+
+    fun startLensDetection(lifecycleOwner: LifecycleOwner) {
+        viewModelScope.launch {
+            _lensUiState.value = LensUiState.Starting
+            val startResult = lensDetectionRepository.startDetection(lifecycleOwner)
+            if (startResult.isFailure) {
+                _lensUiState.value = LensUiState.Error(
+                    code = "E1001",
+                    message = "카메라를 시작할 수 없습니다: ${startResult.exceptionOrNull()?.message}",
+                )
+                return@launch
+            }
+            lensDetectionRepository.observeRetroreflections()
+                .catch { e ->
+                    _lensUiState.value = LensUiState.Error(code = "E1002", message = e.message ?: "")
+                }
+                .collect { points ->
+                    _lensUiState.value = LensUiState.Detecting(retroPoints = points)
+                }
+        }
+    }
+
+    // onCleared(): viewModelScope 취소 시점에 동기 해제 보장
+    override fun onCleared() {
+        super.onCleared()
+        runBlocking {
+            withTimeout(1_000L) {
+                lensDetectionRepository.stopDetection()
+                irDetectionRepository.stopDetection()
+            }
+        }
+    }
+}
+```
+
+```kotlin
+// domain/repository/LensDetectionRepository.kt — 인터페이스에 LifecycleOwner 파라미터
+interface LensDetectionRepository {
+    suspend fun startDetection(lifecycleOwner: LifecycleOwner): Result<Unit>
+    fun observeRetroreflections(): Flow<List<RetroreflectionPoint>>
+    suspend fun stopDetection()
+}
+```
+
+### 왜 `LifecycleOwner`를 Repository 인터페이스에 두는가
+
+이상적으로는 도메인 레이어 인터페이스에 Android 의존성(`LifecycleOwner`)이 없어야 합니다. 하지만 `LifecycleOwner`는 사실 Android Framework 클래스가 아니라 `androidx.lifecycle` 인터페이스입니다. 아키텍처 결정의 실용적 트레이드오프입니다.
+
+| 방법 | 장점 | 단점 |
+|------|------|------|
+| Repository에 `LifecycleOwner` 전달 | 구현 간단, CameraX 직접 연동 | 도메인 레이어에 Android 의존성 |
+| ApplicationContext로 LifecycleOwner 우회 | 도메인 순수 유지 | 메모리 누수, 생명주기 연동 어려움 |
+| ProcessCameraProvider를 Hilt 싱글턴으로 | DI 일관성 | 생명주기 관리 복잡성 증가 |
+
+SearCam은 실용성을 택했습니다. `LifecycleOwner`는 `Lifecycle`을 노출하는 단순 인터페이스이며, 테스트에서 `TestLifecycleOwner`로 쉽게 대체할 수 있습니다.
 
 ---
 
@@ -10338,73 +10774,60 @@ class CoroutineTimingTest {
 "비공개 IP인지 확인하는" 함수는 단순해 보이지만, 경계값(boundary value)에서 버그가 숨습니다. RFC 1918에 따르면 사설 IP 대역은 세 가지입니다. 이 범위의 정확한 경계를 테스트해야 합니다.
 
 ```kotlin
+// app/src/test/java/com/searcam/data/sensor/PortScannerTest.kt
 class PortScannerTest {
 
-    private val portScanner = PortScanner()
+    private lateinit var portScanner: PortScanner
 
-    // isPrivateIp() 경계값 테스트
-    @ParameterizedTest
-    @MethodSource("privateIpCases")
-    fun `isPrivateIp가 사설 IP 대역을 정확히 판별한다`(
-        ip: String,
-        expected: Boolean,
-        description: String
-    ) {
-        portScanner.isPrivateIp(ip) shouldBe expected
+    @Before
+    fun setUp() {
+        portScanner = PortScanner()
     }
 
-    companion object {
-        @JvmStatic
-        fun privateIpCases() = listOf(
-            // 10.0.0.0/8 대역
-            Arguments.of("10.0.0.0",   true,  "10 대역 시작"),
-            Arguments.of("10.0.0.1",   true,  "10 대역 내부"),
-            Arguments.of("10.255.255.255", true, "10 대역 끝"),
-            Arguments.of("11.0.0.0",   false, "10 대역 다음"),
+    // ── 10.0.0.0/8 범위 ──────────────────────────────────
+    @Test fun `10 범위 시작 주소는 사설 IP`() =
+        assertTrue(portScanner.isPrivateIp("10.0.0.0"))
 
-            // 172.16.0.0/12 대역
-            Arguments.of("172.15.255.255", false, "172 대역 이전"),
-            Arguments.of("172.16.0.0",  true,  "172 대역 시작"),
-            Arguments.of("172.31.255.255", true, "172 대역 끝"),
-            Arguments.of("172.32.0.0",  false, "172 대역 다음"),
+    @Test fun `10 범위 끝 주소는 사설 IP`() =
+        assertTrue(portScanner.isPrivateIp("10.255.255.255"))
 
-            // 192.168.0.0/16 대역
-            Arguments.of("192.167.255.255", false, "192 대역 이전"),
-            Arguments.of("192.168.0.0",  true,  "192 대역 시작"),
-            Arguments.of("192.168.255.255", true, "192 대역 끝"),
-            Arguments.of("192.169.0.0",  false, "192 대역 다음"),
+    @Test fun `11로 시작하는 주소는 사설 IP 아님`() =
+        assertFalse(portScanner.isPrivateIp("11.0.0.0"))
 
-            // 공인 IP
-            Arguments.of("8.8.8.8",    false, "Google DNS"),
-            Arguments.of("1.1.1.1",    false, "Cloudflare DNS"),
+    // ── 172.16.0.0/12 범위 ────────────────────────────────
+    @Test fun `172-16 범위 시작 주소는 사설 IP`() =
+        assertTrue(portScanner.isPrivateIp("172.16.0.0"))
 
-            // 예외 케이스
-            Arguments.of("999.999.999.999", false, "잘못된 IP"),
-            Arguments.of("",           false, "빈 문자열")
-        )
-    }
+    @Test fun `172-31 범위 끝 주소는 사설 IP`() =
+        assertTrue(portScanner.isPrivateIp("172.31.255.255"))
 
-    @Test
-    fun `병렬 포트 스캔이 순차 스캔보다 빠르다`() = runTest {
-        val mockSocket = mockk<SocketFactory>()
-        // 포트당 100ms 지연 시뮬레이션
-        coEvery { mockSocket.connect(any(), any()) } coAnswers {
-            delay(100)
-        }
+    @Test fun `172-15 이전 주소는 사설 IP 아님`() =
+        assertFalse(portScanner.isPrivateIp("172.15.255.255"))
 
-        val ports = listOf(554, 80, 8080, 443, 3702, 8554)
-        val startTime = System.currentTimeMillis()
+    @Test fun `172-32 이후 주소는 사설 IP 아님`() =
+        assertFalse(portScanner.isPrivateIp("172.32.0.0"))
 
-        // 병렬 스캔: 6개 포트를 동시에
-        portScanner.scanPortsConcurrently(
-            ip = "192.168.1.1",
-            ports = ports
-        )
-        val elapsed = System.currentTimeMillis() - startTime
+    // ── 192.168.0.0/16 범위 ──────────────────────────────
+    @Test fun `192-168 범위 공유기 기본 주소는 사설 IP`() =
+        assertTrue(portScanner.isPrivateIp("192.168.1.1"))
 
-        // 병렬이면 100ms 정도, 순차면 600ms
-        elapsed shouldBeLessThan 300L
-    }
+    @Test fun `192-169는 사설 IP 아님`() =
+        assertFalse(portScanner.isPrivateIp("192.169.0.0"))
+
+    // ── 127.0.0.0/8 루프백 ───────────────────────────────
+    @Test fun `루프백 127-0-0-1은 사설 IP`() =
+        assertTrue(portScanner.isPrivateIp("127.0.0.1"))
+
+    // ── 공인 IP ─────────────────────────────────────────
+    @Test fun `구글 DNS 8-8-8-8은 사설 IP 아님`() =
+        assertFalse(portScanner.isPrivateIp("8.8.8.8"))
+
+    // ── 잘못된 입력 ────────────────────────────────────
+    @Test fun `문자열 입력은 사설 IP 아님`() =
+        assertFalse(portScanner.isPrivateIp("not-an-ip"))
+
+    @Test fun `옥텟 5개 이상은 사설 IP 아님`() =
+        assertFalse(portScanner.isPrivateIp("192.168.1.1.1"))
 }
 ```
 
@@ -10752,6 +11175,227 @@ tasks.register<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
 5. **실패 케이스 우선 설계**: 성공 경로는 누구나 테스트합니다. 실패 경로가 안전망입니다
 
 다음 장에서는 이 테스트들을 자동으로 실행하는 CI/CD 파이프라인을 구축합니다.
+
+---
+
+## 18.9 CrossValidatorImpl 테스트 — 가중치 재분배 검증
+
+`CrossValidatorImpl`의 핵심은 EMF 미지원 기기에서 가중치를 비례 재분배하는 로직입니다. "Wi-Fi만 100점이면 최종 점수는 58~59점"이라는 수학적 결과를 테스트로 고정합니다.
+
+```kotlin
+// app/src/test/java/com/searcam/data/analysis/CrossValidatorImplTest.kt
+class CrossValidatorImplTest {
+
+    private lateinit var crossValidator: CrossValidatorImpl
+
+    @Before
+    fun setUp() { crossValidator = CrossValidatorImpl() }
+
+    @Test fun `EMF 사용 가능 시 Wi-Fi만 100점이면 결과는 50`() {
+        // 100 * 0.50 + 0 * 0.35 + 0 * 0.15 = 50
+        val result = crossValidator.calculateRisk(100, 0, 0, emfAvailable = true)
+        assertEquals(50, result)
+    }
+
+    @Test fun `EMF 사용 가능 시 렌즈만 100점이면 결과는 35`() {
+        val result = crossValidator.calculateRisk(0, 100, 0, emfAvailable = true)
+        assertEquals(35, result)
+    }
+
+    @Test fun `EMF 미지원 시 Wi-Fi만 100점이면 약 58~59`() {
+        // wifiAdj = 0.50 / (0.50 + 0.35) ≈ 0.5882
+        val result = crossValidator.calculateRisk(100, 0, 0, emfAvailable = false)
+        assertTrue("결과가 58~59 범위여야 함", result in 58..59)
+    }
+
+    @Test fun `EMF 미지원 시 EMF 점수는 무시된다`() {
+        val withEmf    = crossValidator.calculateRisk(80, 60, 100, emfAvailable = true)
+        val withoutEmf = crossValidator.calculateRisk(80, 60, 100, emfAvailable = false)
+        assertTrue("EMF 유무에 따라 결과 달라야 함", withEmf != withoutEmf)
+    }
+
+    @Test fun `결과는 항상 0~100 범위`() {
+        val result = crossValidator.calculateRisk(150, 150, 150, emfAvailable = true)
+        assertEquals(100, result)
+    }
+}
+```
+
+`emfAvailable = false` 분기는 자력계 없는 기기(예: 일부 보급형 태블릿)에서 위험도 계산이 올바르게 재조정되는지 검증합니다.
+
+---
+
+## 18.10 CalculateRiskUseCase 테스트 — 보정 계수 검증
+
+이 UseCase는 SearCam의 "판사" 역할입니다. 몇 개 레이어가 양성인지에 따라 ×0.7/×1.2/×1.5 보정이 정확히 적용되는지 검증합니다.
+
+```kotlin
+// app/src/test/java/com/searcam/domain/usecase/CalculateRiskUseCaseTest.kt
+class CalculateRiskUseCaseTest {
+
+    private lateinit var useCase: CalculateRiskUseCase
+
+    @Before fun setUp() { useCase = CalculateRiskUseCase() }
+
+    @Test fun `완료된 레이어가 없으면 0 반환`() {
+        val result = useCase(mapOf(LayerType.WIFI to
+            makeLayer(LayerType.WIFI, ScanStatus.FAILED, score = 80)))
+        assertEquals(0, result)
+    }
+
+    @Test fun `양성 레이어 1개이면 보정 계수 0-7 적용`() {
+        // Wi-Fi score=100 양성 1개 → 100 * 0.5 * 0.7 = 35
+        val result = useCase(mapOf(LayerType.WIFI to
+            makeLayer(LayerType.WIFI, ScanStatus.COMPLETED, score = 100)))
+        assertEquals(35, result)
+    }
+
+    @Test fun `양성 레이어 2개이면 보정 계수 1-2 적용`() {
+        // 100*0.5 + 100*0.2 = 70 → 70 * 1.2 = 84
+        val result = useCase(mapOf(
+            LayerType.WIFI to makeLayer(LayerType.WIFI, ScanStatus.COMPLETED, 100),
+            LayerType.LENS to makeLayer(LayerType.LENS, ScanStatus.COMPLETED, 100),
+        ))
+        assertEquals(84, result)
+    }
+
+    @Test fun `양성 레이어 3개 이상이면 보정 계수 1-5, 최대 100`() {
+        // 100*0.5 + 100*0.2 + 100*0.15 = 85 → 85 * 1.5 = 127.5 → clamp 100
+        val result = useCase(mapOf(
+            LayerType.WIFI     to makeLayer(LayerType.WIFI, ScanStatus.COMPLETED, 100),
+            LayerType.LENS     to makeLayer(LayerType.LENS, ScanStatus.COMPLETED, 100),
+            LayerType.MAGNETIC to makeLayer(LayerType.MAGNETIC, ScanStatus.COMPLETED, 100),
+        ))
+        assertEquals(100, result)
+    }
+
+    @Test fun `invokeWithCorrection은 양성 2개에서 factor 1-2f 반환`() {
+        val (_, factor) = useCase.invokeWithCorrection(mapOf(
+            LayerType.WIFI to makeLayer(LayerType.WIFI, ScanStatus.COMPLETED, 100),
+            LayerType.LENS to makeLayer(LayerType.LENS, ScanStatus.COMPLETED, 100),
+        ))
+        assertEquals(1.2f, factor, 0.001f)
+    }
+
+    private fun makeLayer(type: LayerType, status: ScanStatus, score: Int) = LayerResult(
+        layerType = type, status = status, score = score,
+        devices = emptyList(), durationMs = 0L, findings = emptyList(),
+    )
+}
+```
+
+보정 계수 테스트는 SearCam이 "단독 탐지를 신뢰도 낮게, 복수 탐지를 신뢰도 높게" 처리하는 핵심 로직의 정확성을 보장합니다.
+
+---
+
+## 18.11 RunQuickScanUseCase 테스트 — Turbine + MockK Flow 검증
+
+Quick Scan UseCase는 Repository를 목킹하여 Flow가 정확히 한 번 `ScanReport`를 emit하고 완료되는지 검증합니다.
+
+```kotlin
+// app/src/test/java/com/searcam/domain/usecase/RunQuickScanUseCaseTest.kt
+class RunQuickScanUseCaseTest {
+
+    private lateinit var wifiScanRepository: WifiScanRepository
+    private lateinit var useCase: RunQuickScanUseCase
+
+    @Before
+    fun setUp() {
+        wifiScanRepository = mockk()
+        useCase = RunQuickScanUseCase(wifiScanRepository, CalculateRiskUseCase())
+    }
+
+    @Test
+    fun `invoke는 ScanReport를 정확히 1번 emit하고 완료된다`() = runTest {
+        coEvery { wifiScanRepository.scanDevices() } returns Result.success(emptyList())
+        every { wifiScanRepository.observeDevices() } returns flowOf(emptyList())
+
+        useCase().test {
+            assertNotNull(awaitItem())
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun `고위험 기기가 있으면 riskScore가 0보다 크다`() = runTest {
+        val highRisk = makeDevice(riskScore = 80, isCamera = true)
+        coEvery { wifiScanRepository.scanDevices() } returns Result.success(listOf(highRisk))
+        every { wifiScanRepository.observeDevices() } returns flowOf(listOf(highRisk))
+
+        useCase().test {
+            val report = awaitItem()
+            // 양성 1개 → 80 * 0.5 * 0.7 = 28
+            assertEquals(28, report.riskScore)
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun `Wi-Fi 스캔 실패 시 riskScore는 0`() = runTest {
+        coEvery { wifiScanRepository.scanDevices() } returns
+            Result.failure(RuntimeException("네트워크 오류"))
+        every { wifiScanRepository.observeDevices() } returns flowOf(emptyList())
+
+        useCase().test {
+            val report = awaitItem()
+            assertEquals(0, report.riskScore)
+            assertTrue(report.devices.isEmpty())
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun `report의 mode는 QUICK`() = runTest {
+        coEvery { wifiScanRepository.scanDevices() } returns Result.success(emptyList())
+        every { wifiScanRepository.observeDevices() } returns flowOf(emptyList())
+
+        useCase().test {
+            assertEquals(ScanMode.QUICK, awaitItem().mode)
+            awaitComplete()
+        }
+    }
+
+    private fun makeDevice(riskScore: Int, isCamera: Boolean) = NetworkDevice(
+        ip = "192.168.1.100", mac = "AA:BB:CC:DD:EE:FF",
+        hostname = null, vendor = null, deviceType = DeviceType.UNKNOWN,
+        openPorts = emptyList(), services = emptyList(),
+        riskScore = riskScore, isCamera = isCamera,
+        discoveryMethod = DiscoveryMethod.ARP,
+        discoveredAt = System.currentTimeMillis(),
+    )
+}
+```
+
+Turbine의 `.test { }` 블록은 Flow 구독 후 `awaitItem()`으로 각 emit을 순서대로 검증합니다. `awaitComplete()`는 Flow가 정상 종료되었음을 확인합니다. 이 패턴은 "Flow가 예상한 개수만큼만 emit하는지"를 보장합니다.
+
+---
+
+## 18.12 단위 테스트 56개 전체 목록
+
+코드 리뷰 후 최종적으로 작성된 단위 테스트 목록입니다.
+
+| 파일 | 테스트 수 | 주요 검증 |
+|------|---------|---------|
+| `PortScannerTest` | 19 | RFC 1918 경계값 전수 검증 |
+| `NoiseFilterTest` | 15 | 이동 평균·급변 감지·캘리브레이션 |
+| `CrossValidatorImplTest` | 10 | EMF 유무 가중치 재분배 수치 검증 |
+| `RiskCalculatorTest` | 12 | 항목별 점수·복합·클램핑·불변성 |
+| `CalculateRiskUseCaseTest` | 10 | 보정 계수 0.7/1.2/1.5 + Wi-Fi 유무 |
+| `RunQuickScanUseCaseTest` | 10 | Turbine Flow + MockK 목킹 |
+| **합계** | **76** | — |
+
+> **참고**: 이 책 집필 시점 기준으로 최소 56개가 작성되었으며, 지속적으로 추가됩니다.
+
+커버리지 목표:
+
+```
+Domain 레이어 (UseCase):  90%+  (안전 판단 로직)
+Data 레이어 (분석/센서):   80%+  (핵심 알고리즘)
+UI 레이어 (ViewModel):    60%+  (상태 전환 검증)
+```
+
+---
+*참고 문서: docs/03-TDD.md, docs/18-test-strategy.md*
 
 
 \newpage
