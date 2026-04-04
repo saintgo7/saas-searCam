@@ -1,0 +1,46 @@
+services:
+
+  # ── 이미지 빌드 (최초 1회 또는 SDK 변경 시)
+  # docker compose build
+  #
+  # ── 유닛 테스트 (기본)
+  # docker compose run --rm build test
+  #
+  # ── 디버그 APK 빌드
+  # docker compose run --rm build build
+  #
+  # ── 컴파일 오류 체크만
+  # docker compose run --rm build check
+  #
+  # ── 인터랙티브 셸
+  # docker compose run --rm build shell
+
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: searcam-build:latest
+    container_name: searcam-build
+    working_dir: /project
+
+    volumes:
+      # 소스 코드 마운트 (읽기/쓰기 — gradlew 생성, build/ 출력)
+      - ..:/project
+
+      # Gradle 캐시 — 의존성 재다운로드 방지 (컨테이너 간 공유)
+      - gradle-cache:/root/.gradle
+
+      # Android SDK 캐시 재사용
+      - android-sdk-cache:/opt/android-sdk/.m2
+
+    environment:
+      - ANDROID_HOME=/opt/android-sdk
+      - GRADLE_VERSION=8.2
+      - GRADLE_OPTS=-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true
+
+    # 기본 명령: 유닛 테스트
+    command: test
+
+volumes:
+  gradle-cache:
+  android-sdk-cache:
