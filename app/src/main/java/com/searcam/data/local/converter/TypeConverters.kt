@@ -228,35 +228,6 @@ class SearCamTypeConverters {
     }
 
     // ─────────────────────────────────────────────────────────
-    // Long timestamp ↔ 표준 Long (현재는 직접 저장 가능하므로 참조용)
-    // ─────────────────────────────────────────────────────────
-
-    /**
-     * Long 타임스탬프를 그대로 반환한다.
-     *
-     * Room은 Long을 직접 저장할 수 있지만,
-     * java.util.Date 등 변환이 필요한 경우 이 컨버터를 확장한다.
-     *
-     * @param value Unix epoch millis
-     * @return 동일한 Long 값
-     */
-    @TypeConverter
-    fun fromTimestamp(value: Long?): Long {
-        return value ?: 0L
-    }
-
-    /**
-     * Long 타임스탬프를 그대로 반환한다.
-     *
-     * @param value Unix epoch millis
-     * @return 동일한 Long 값
-     */
-    @TypeConverter
-    fun toTimestamp(value: Long?): Long {
-        return value ?: 0L
-    }
-
-    // ─────────────────────────────────────────────────────────
     // 내부 헬퍼
     // ─────────────────────────────────────────────────────────
 
