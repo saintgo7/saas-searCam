@@ -9,4 +9,5 @@
     <color name="risk_caution">#F39C12</color>
     <color name="risk_danger">#E67E22</color>
     <color name="risk_critical">#E74C3C</color>
+    <color name="ic_launcher_background">#2196F3</color>
 </resources>
