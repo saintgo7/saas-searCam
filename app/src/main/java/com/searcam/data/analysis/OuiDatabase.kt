@@ -2,6 +2,7 @@ package com.searcam.data.analysis
 
 import android.content.Context
 import com.searcam.util.Constants
+import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONObject
 import timber.log.Timber
 import javax.inject.Inject
@@ -18,7 +19,7 @@ import javax.inject.Inject
  * 초기화 비용이 크므로 @Singleton으로 한 번만 로드한다.
  */
 class OuiDatabase @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context,
 ) {
 
     // MAC OUI → 제조사명 매핑 테이블 (불변 Map)

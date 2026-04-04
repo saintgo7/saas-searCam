@@ -1,6 +1,7 @@
 package com.searcam.data.sensor
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
@@ -39,7 +40,7 @@ import kotlin.coroutines.resume
  * Android 12+ 스캔 쓰로틀링: 30초 캐시로 재스캔 방지
  */
 class WifiScanner @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
 ) {
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
