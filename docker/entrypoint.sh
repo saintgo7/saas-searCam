@@ -32,6 +32,11 @@ case "$CMD" in
   test)
     info "Running unit tests..."
     ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1
+    # copy reports → outputs (nginx에서 접근 가능)
+    mkdir -p app/build/outputs/test-results/html
+    mkdir -p app/build/outputs/test-results/xml
+    cp -r app/build/reports/tests/testDebugUnitTest/. app/build/outputs/test-results/html/ 2>/dev/null || true
+    cp -r app/build/test-results/testDebugUnitTest/. app/build/outputs/test-results/xml/ 2>/dev/null || true
     success "Unit tests complete."
     ;;
 
