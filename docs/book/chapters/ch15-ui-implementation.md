@@ -742,6 +742,111 @@ fun SearchScreen() {
 
 ---
 
+## 15.9 코드 리뷰 개선 사항 — `LifecycleOwner` 전파 아키텍처
+
+### 문제: 카메라 바인딩에 `LifecycleOwner`가 필요한데 어디서 제공해야 하나
+
+CameraX는 `ProcessCameraProvider.bindToLifecycle(lifecycleOwner, ...)` 호출 시 `LifecycleOwner`를 요구합니다. 초기 구현에서는 Repository 레이어에서 `Application Context`로 임시 처리하거나, ViewModel에서 Context를 직접 참조하는 패턴을 사용했습니다. 이는 메모리 누수와 테스트 어려움이라는 두 가지 문제를 만들었습니다.
+
+### 해결: `LifecycleOwner`를 Compose Screen에서 UseCase까지 파라미터로 전달
+
+```
+[LensFinderScreen / IrCameraScreen]   ← LocalLifecycleOwner.current 획득
+        ↓ 파라미터 전달
+[LensViewModel.startLensDetection(lifecycleOwner)]
+        ↓ 파라미터 전달
+[LensDetectionRepository.startDetection(lifecycleOwner)]
+        ↓ 파라미터 전달
+[LensDetector.startDetection(lifecycleOwner)]   ← CameraX 바인딩
+```
+
+Compose Screen에서 `LocalLifecycleOwner.current`로 현재 LifecycleOwner를 얻어 아래로 전달합니다.
+
+```kotlin
+// ui/lens/LensFinderScreen.kt — LocalLifecycleOwner.current로 획득
+@Composable
+fun LensFinderScreen(
+    onNavigateUp: () -> Unit,
+    viewModel: LensViewModel = hiltViewModel(),
+) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    // DisposableEffect(lifecycleOwner): lifecycleOwner가 바뀌면 카메라를 재바인딩
+    DisposableEffect(lifecycleOwner) {
+        viewModel.startLensDetection(lifecycleOwner)
+        onDispose {
+            viewModel.stopLensDetection()
+        }
+    }
+    // ...
+}
+```
+
+```kotlin
+// ui/lens/LensViewModel.kt — Screen에서 받아 Repository로 전달
+@HiltViewModel
+class LensViewModel @Inject constructor(
+    private val lensDetectionRepository: LensDetectionRepository,
+    private val irDetectionRepository: IrDetectionRepository,
+) : ViewModel() {
+
+    fun startLensDetection(lifecycleOwner: LifecycleOwner) {
+        viewModelScope.launch {
+            _lensUiState.value = LensUiState.Starting
+            val startResult = lensDetectionRepository.startDetection(lifecycleOwner)
+            if (startResult.isFailure) {
+                _lensUiState.value = LensUiState.Error(
+                    code = "E1001",
+                    message = "카메라를 시작할 수 없습니다: ${startResult.exceptionOrNull()?.message}",
+                )
+                return@launch
+            }
+            lensDetectionRepository.observeRetroreflections()
+                .catch { e ->
+                    _lensUiState.value = LensUiState.Error(code = "E1002", message = e.message ?: "")
+                }
+                .collect { points ->
+                    _lensUiState.value = LensUiState.Detecting(retroPoints = points)
+                }
+        }
+    }
+
+    // onCleared(): viewModelScope 취소 시점에 동기 해제 보장
+    override fun onCleared() {
+        super.onCleared()
+        runBlocking {
+            withTimeout(1_000L) {
+                lensDetectionRepository.stopDetection()
+                irDetectionRepository.stopDetection()
+            }
+        }
+    }
+}
+```
+
+```kotlin
+// domain/repository/LensDetectionRepository.kt — 인터페이스에 LifecycleOwner 파라미터
+interface LensDetectionRepository {
+    suspend fun startDetection(lifecycleOwner: LifecycleOwner): Result<Unit>
+    fun observeRetroreflections(): Flow<List<RetroreflectionPoint>>
+    suspend fun stopDetection()
+}
+```
+
+### 왜 `LifecycleOwner`를 Repository 인터페이스에 두는가
+
+이상적으로는 도메인 레이어 인터페이스에 Android 의존성(`LifecycleOwner`)이 없어야 합니다. 하지만 `LifecycleOwner`는 사실 Android Framework 클래스가 아니라 `androidx.lifecycle` 인터페이스입니다. 아키텍처 결정의 실용적 트레이드오프입니다.
+
+| 방법 | 장점 | 단점 |
+|------|------|------|
+| Repository에 `LifecycleOwner` 전달 | 구현 간단, CameraX 직접 연동 | 도메인 레이어에 Android 의존성 |
+| ApplicationContext로 LifecycleOwner 우회 | 도메인 순수 유지 | 메모리 누수, 생명주기 연동 어려움 |
+| ProcessCameraProvider를 Hilt 싱글턴으로 | DI 일관성 | 생명주기 관리 복잡성 증가 |
+
+SearCam은 실용성을 택했습니다. `LifecycleOwner`는 `Lifecycle`을 노출하는 단순 인터페이스이며, 테스트에서 `TestLifecycleOwner`로 쉽게 대체할 수 있습니다.
+
+---
+
 ## 다음 장 예고
 
 화면이 완성되었으니 이제 데이터를 영구적으로 저장할 차례입니다. Ch16에서는 Room DB로 스캔 이력을 저장하고, SQLCipher로 암호화하는 방법을 구현합니다.

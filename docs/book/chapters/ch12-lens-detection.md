@@ -471,6 +471,85 @@ private val LENS_MAX_AREA_PX = 800  // 너무 크면 안경/유리
 
 ---
 
+## 12.7 코드 리뷰 개선 사항 — 멀티스레드 안전과 불변성
+
+렌즈 감지 파이프라인은 CameraX 프레임 분석 콜백(백그라운드 Executor 스레드)과 ViewModel(메인 스레드)이 동시에 데이터를 읽고 쓰는 구조입니다. 코드 리뷰에서 이 경계에서 발생하는 스레드 안전 문제 2건이 발견되었습니다.
+
+### 개선 1: `stabilityTracker`를 `ConcurrentHashMap`으로 교체
+
+**문제**: `stabilityTracker`는 CameraX 분석 스레드(프레임 콜백)와 stop 메서드(메인 스레드)에서 동시에 접근됩니다. 일반 `HashMap`은 동시 수정 시 `ConcurrentModificationException`을 던지거나 데이터를 손상시킬 수 있습니다.
+
+```kotlin
+// Before: HashMap은 멀티스레드 환경에서 안전하지 않음
+private val stabilityTracker: MutableMap<Int, TrackedPoint> = mutableMapOf()
+
+// After: ConcurrentHashMap은 읽기/쓰기 동시 접근을 안전하게 처리
+private val stabilityTracker: MutableMap<Int, TrackedPoint> = ConcurrentHashMap()
+```
+
+`ConcurrentHashMap`은 세그먼트(Segment) 단위 잠금을 사용합니다. 전체 Map에 대한 락이 아니라 일부 버킷에만 락을 걸기 때문에, 성능 저하 없이 멀티스레드 안전을 보장합니다. CameraX처럼 별도 Executor에서 고빈도로 호출되는 분석 콜백에서는 필수입니다.
+
+### 개선 2: `Cluster.contrastRatio`를 `val`로 — 생성 후 불변 보장
+
+**문제**: `Cluster` 데이터 클래스의 `contrastRatio`가 `var`로 선언되어 있어서, 객체 생성 후 외부에서 값을 변경할 수 있었습니다. 이는 예기치 않은 상태 변이로 이어질 수 있습니다.
+
+```kotlin
+// Before: var로 선언 — 생성 후 외부 변경 가능
+data class Cluster(
+    val center: PointF,
+    val radius: Float,
+    val avgBrightness: Float,
+    val circularity: Float,
+    var contrastRatio: Float = 0f,  // 나중에 cluster.contrastRatio = x 형태로 수정 위험
+)
+
+// After: val로 선언 + copy()로 새 객체 생성
+data class Cluster(
+    val center: PointF,
+    val radius: Float,
+    val avgBrightness: Float,
+    val circularity: Float,
+    val contrastRatio: Float = 0f,  // val: 생성 후 변경 불가
+)
+
+// 사용 시: copy()로 새 Cluster 인스턴스 반환 (원본 불변)
+val clusterWithRatio = cluster.copy(contrastRatio = computedRatio)
+```
+
+`data class`의 `copy()`는 불변성 패턴의 핵심입니다. 기존 객체를 변경하는 대신, 변경된 필드만 다른 새 인스턴스를 반환합니다. 이렇게 하면 한 곳의 코드가 다른 곳의 참조에 영향을 줄 수 없어서 버그 추적이 쉬워집니다.
+
+### 개선 3: `calculateRiskScore()`를 `listOfNotNull + sumOf` 패턴으로
+
+**문제**: 위험도 점수 계산 함수가 `var score = 0; score += ...` 패턴으로 상태를 변이시키고 있었습니다. 각 조건이 점수에 독립적으로 기여하는 로직인데, 굳이 변이가 필요하지 않습니다.
+
+```kotlin
+// Before: var 변이 — 각 if 블록이 score를 변경
+private fun calculateRiskScore(...): Int {
+    var score = 0
+    if (radius in 1.0..5.0 && circularity > CIRCULARITY_MIN) score += 30
+    if (isStable) score += 20
+    if (flashDependency) score += 25
+    if (lastContrastRatio > 20.0f) score += 15
+    if (lastBrightness > 230f) score += 10
+    return score.coerceIn(0, 100)
+}
+
+// After: listOfNotNull + sumOf — 조건별 기여값을 선언적으로 나열
+private fun calculateRiskScore(...): Int {
+    return listOfNotNull(
+        30.takeIf { radius in 1.0..5.0 && circularity > CIRCULARITY_MIN },
+        20.takeIf { isStable },
+        25.takeIf { flashDependency },
+        15.takeIf { lastContrastRatio > 20.0f },
+        10.takeIf { lastBrightness > 230f },
+    ).sumOf { it }.coerceIn(0, 100)
+}
+```
+
+`takeIf { 조건 }`는 조건이 참이면 수신 객체(여기서는 점수)를 반환하고, 거짓이면 `null`을 반환합니다. `listOfNotNull`이 null을 제거하고 `sumOf`가 합산합니다. 결과는 동일하지만, 코드의 의도가 훨씬 명확합니다 — "이 조건들이 충족될 때 이 점수가 기여한다".
+
+---
+
 ## 다음 장 예고
 
 두 개의 주요 레이어를 구현했습니다. Ch13에서는 마지막 보조 레이어 — 전자기장(EMF) 감지 — 를 다룹니다. 가중치 15%지만, 다른 두 레이어의 결과를 보강하는 중요한 역할을 합니다.

@@ -493,6 +493,108 @@ sealed class ScanUiState {
 
 ---
 
+## 14.7 코드 리뷰 개선 사항 — 단일 진실 출처와 중복 제거
+
+### 개선 1: 가중치 상수를 `LayerType` 열거형으로 통합 — 단일 진실 출처
+
+**문제**: 초기 구현에서 `CrossValidatorImpl`이 `WEIGHT_WIFI = 0.50f`, `WEIGHT_LENS = 0.35f` 같은 상수를 자체적으로 정의했습니다. 이미 `LayerType` 열거형에 동일한 가중치가 정의되어 있었는데 중복이었습니다.
+
+```kotlin
+// Before: CrossValidatorImpl 내부에 중복 상수
+class CrossValidatorImpl : CrossValidator {
+    companion object {
+        private const val WEIGHT_WIFI = 0.50f   // LayerType.WIFI.weight와 중복!
+        private const val WEIGHT_LENS = 0.35f
+        private const val WEIGHT_EMF = 0.15f
+    }
+}
+
+// After: LayerType.weight를 단일 진실 출처(Single Source of Truth)로 사용
+class CrossValidatorImpl : CrossValidator {
+    override fun calculateRisk(...): Int {
+        val wifiWeight = LayerType.WIFI.weight              // 0.50
+        val lensWeight = LayerType.LENS.weight + LayerType.IR.weight  // 0.20 + 0.15 = 0.35
+        val emfWeight  = LayerType.MAGNETIC.weight          // 0.15
+        // ...
+    }
+}
+
+// LayerType 열거형 — 가중치의 유일한 정의 장소
+enum class LayerType(
+    val weight: Float,        // Wi-Fi 연결 시 기본 가중치
+    val weightNoWifi: Float,  // Wi-Fi 미연결 시 가중치
+    ...
+) {
+    WIFI(weight = 0.50f, weightNoWifi = 0.00f, ...),
+    LENS(weight = 0.20f, weightNoWifi = 0.45f, ...),
+    IR(weight = 0.15f,   weightNoWifi = 0.30f, ...),
+    MAGNETIC(weight = 0.15f, weightNoWifi = 0.25f, ...),
+}
+```
+
+단일 진실 출처(SSOT, Single Source of Truth)는 소프트웨어 설계의 핵심 원칙입니다. 가중치를 변경해야 할 때 `LayerType` 한 곳만 수정하면 모든 사용처에 자동으로 반영됩니다. 두 곳에 정의된 값은 언젠가 반드시 불일치가 발생합니다.
+
+### 개선 2: `CalculateRiskUseCase.invoke()`가 `invokeWithCorrection()`에 위임 — 중복 로직 제거
+
+**문제**: `invoke()`와 `invokeWithCorrection()` 두 함수가 거의 동일한 로직을 가지고 있었습니다. 34줄짜리 계산 로직이 복사·붙여넣기되어 있어서, 알고리즘을 수정하면 두 곳을 모두 수정해야 했습니다.
+
+```kotlin
+// Before: invoke()와 invokeWithCorrection()에 동일한 34줄 로직 중복
+operator fun invoke(layerResults: Map<LayerType, LayerResult>): Int {
+    // 34줄의 가중치 계산 로직 (completedLayers, isWifiAvailable, ...)
+    val finalScore = ...
+    return finalScore.coerceIn(0, 100)
+}
+
+fun invokeWithCorrection(...): Pair<Int, Float> {
+    // 동일한 34줄 로직 반복
+    val finalScore = ...
+    return Pair(finalScore, correctionFactor)
+}
+
+// After: invoke()가 invokeWithCorrection()에 완전 위임 — 1줄로 해결
+operator fun invoke(layerResults: Map<LayerType, LayerResult>): Int =
+    invokeWithCorrection(layerResults).first
+```
+
+이 리팩토링으로 코드가 34줄에서 1줄로 줄었습니다. DRY(Don't Repeat Yourself) 원칙의 교과서적 적용입니다. 앞으로 알고리즘을 바꾸면 `invokeWithCorrection()` 한 곳만 수정하면 됩니다.
+
+### 개선 3: `RunFullScanUseCase`에 `AllLayerResults` 네임드 data class 도입
+
+**문제**: `runAllLayersInParallel()`이 `List<LayerResult>`를 반환하고, 호출부에서 인덱스 기반으로 구조 분해(destructuring)했습니다. 리스트 순서가 바뀌면 컴파일 오류 없이 wifi/lens/ir/magnetic이 뒤바뀌는 심각한 버그가 발생할 수 있었습니다.
+
+```kotlin
+// Before: 위치 기반 destructuring — 순서 오류가 컴파일 타임에 잡히지 않음
+val (wifiResult, lensResult, irResult, magneticResult) = runAllLayersInParallel(lifecycleOwner)
+// ↑ listOf() 안의 순서가 바뀌면 silently wrong data
+
+// After: 이름 기반 data class — 잘못된 접근은 컴파일 오류
+private data class AllLayerResults(
+    val wifi: LayerResult,
+    val lens: LayerResult,
+    val ir: LayerResult,
+    val magnetic: LayerResult,
+)
+
+private suspend fun runAllLayersInParallel(...): AllLayerResults = coroutineScope {
+    AllLayerResults(
+        wifi     = wifiDeferred.await(),
+        lens     = lensDeferred.await(),
+        ir       = irDeferred.await(),
+        magnetic = magneticDeferred.await(),
+    )
+}
+
+// 사용부: 이름으로 접근 — 순서 변경에 영향받지 않음
+val layersParallel = runAllLayersInParallel(lifecycleOwner)
+val wifiResult = layersParallel.wifi
+val lensResult = layersParallel.lens
+```
+
+"무언의 실패(Silent failure)"는 가장 위험한 버그 패턴입니다. 위치 기반 destructuring은 컴파일러가 타입만 확인하므로, `List<LayerResult>`에서 순서 오류는 런타임에서야 발견됩니다. 이름 기반 접근은 이 위험을 컴파일 타임으로 앞당깁니다.
+
+---
+
 ## 다음 장 예고
 
 탐지 엔진의 핵심이 완성되었습니다. Ch15에서는 이 결과를 사용자에게 어떻게 전달할지 — ScanResult 화면, RiskGauge 컴포넌트, 리포트 저장 — Compose UI 레이어를 구현합니다.

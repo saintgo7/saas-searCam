@@ -498,6 +498,103 @@ class WifiScanRepositoryImpl @Inject constructor(
 
 ---
 
+## 11.8 코드 리뷰 개선 사항 — 실전 배포 전 발견한 버그들
+
+초기 구현 후 코드 리뷰 단계에서 실제 배포 환경에서 문제가 될 수 있는 이슈 4건이 발견되었습니다. 각 수정이 왜 필요했는지 구체적으로 살펴봅니다.
+
+### 개선 1: `cachedDevices`에 `@Volatile` 추가 — 스레드 가시성 보장
+
+**문제**: `cachedDevices` 필드를 여러 코루틴에서 읽고 쓸 수 있는데, JVM의 CPU 캐시 최적화로 인해 한 스레드에서 쓴 값이 다른 스레드에 즉시 보이지 않을 수 있었습니다.
+
+```kotlin
+// Before: JVM이 CPU 캐시에 값을 유지할 수 있어 멀티스레드 환경에서 오래된 값 반환 위험
+private var cachedDevices: List<NetworkDevice> = emptyList()
+
+// After: @Volatile이 모든 스레드가 항상 최신 값을 읽도록 강제합니다
+@Volatile
+private var cachedDevices: List<NetworkDevice> = emptyList()
+```
+
+`@Volatile`은 해당 필드의 읽기/쓰기가 반드시 메인 메모리를 통해 이루어지도록 JVM에 지시합니다. 복잡한 동기화 블록 없이 단순 플래그나 참조 타입의 스레드 안전성을 보장하는 가장 가벼운 방법입니다.
+
+### 개선 2: SSDP 소켓 리소스 누수 수정 — `try-finally` 보장
+
+**문제**: SSDP 탐색 중 `socket.leaveGroup()`이 예외를 던지면 `socket.close()`에 도달하지 못하고 소켓이 열린 채로 남아있었습니다. 장시간 사용 시 소켓 고갈로 이어질 수 있습니다.
+
+```kotlin
+// Before: leaveGroup()이 실패하면 socket.close()가 실행되지 않음
+try {
+    socket.leaveGroup(InetAddress.getByName(SSDP_MULTICAST_ADDRESS))
+    socket.close()  // leaveGroup()이 throw하면 이 줄에 도달 못 함!
+} catch (e: Exception) {
+    Timber.e(e, "SSDP 오류")
+}
+
+// After: finally 블록은 예외 발생 여부와 무관하게 반드시 실행됩니다
+val socket = MulticastSocket()
+try {
+    // ... SSDP 탐색 코드
+} catch (e: Exception) {
+    Timber.e(e, "[E2003] SSDP 탐색 오류: ${e.message}")
+} finally {
+    // finally는 예외가 발생해도 반드시 실행 — 소켓 누수 방지
+    runCatching { socket.leaveGroup(InetAddress.getByName(SSDP_MULTICAST_ADDRESS)) }
+    socket.close()
+}
+```
+
+`try-finally` 패턴은 파일, 소켓, 데이터베이스 커넥션처럼 "열면 반드시 닫아야 하는" 자원의 황금 규칙입니다. Kotlin에서는 `use {}` 확장 함수가 이를 자동화하지만, `MulticastSocket`처럼 `Closeable`을 구현하지 않는 경우 수동으로 `finally`를 작성해야 합니다.
+
+### 개선 3: 호스트명 입력 Sanitization — 제어 문자 차단
+
+**문제**: mDNS/SSDP로 수신하는 호스트명은 외부 기기가 제공합니다. 악의적인 기기가 제어 문자(NULL, CRLF 등)나 매우 긴 문자열을 호스트명으로 보낼 수 있습니다.
+
+```kotlin
+// Before: 외부에서 받은 호스트명을 그대로 저장 (Log Injection, 버퍼 오버플로 위험)
+val hostname: String? = rawHostname
+
+// After: 길이 제한 + 제어 문자 제거
+val hostname: String? = rawHostname
+    ?.take(128)  // 최대 128자 제한 (DNS 최대 길이)
+    ?.replace(Regex("[\\x00-\\x1F\\x7F]"), "")  // ASCII 제어 문자 제거
+```
+
+외부 입력은 시스템 경계(System Boundary)에서 반드시 검증해야 합니다. 제어 문자가 포함된 호스트명이 로그에 기록되면 Log Injection 공격에 악용될 수 있고, UI에 표시하면 레이아웃이 깨집니다.
+
+### 개선 4: `PortScanner`에 사설 IP 범위 가드 — 인터넷 스캔 방지
+
+**문제**: IP 주소 검증 없이 포트 스캔을 수행하면 이론적으로 인터넷 공인 IP를 스캔할 수 있었습니다. 이는 법적·보안적 문제를 일으킬 수 있습니다.
+
+```kotlin
+// PortScanner.kt
+suspend fun scanPorts(ip: String): List<Int> = withContext(Dispatchers.IO) {
+    // RFC 1918 사설 IP 범위만 스캔 허용 — 공인 IP 스캔 방지
+    if (!isPrivateIp(ip)) {
+        Timber.w("[E2004] 사설 IP 범위 외 스캔 차단: $ip")
+        return@withContext emptyList()
+    }
+    // ... 실제 스캔 로직
+}
+
+// RFC 1918: 10.x.x.x / 172.16-31.x.x / 192.168.x.x / 127.x.x.x
+internal fun isPrivateIp(ip: String): Boolean {
+    return try {
+        val parts = ip.split(".").map { it.toInt() }
+        if (parts.size != 4) return false
+        val (a, b, _, _) = parts
+        a == 10 || a == 127 ||
+            (a == 172 && b in 16..31) ||
+            (a == 192 && b == 168)
+    } catch (e: Exception) {
+        false
+    }
+}
+```
+
+이 함수는 `internal`로 선언되어 같은 모듈의 테스트에서 직접 접근 가능합니다. `app/src/test/.../PortScannerTest.kt`에서 경계값 19케이스를 단위 테스트로 검증합니다.
+
+---
+
 ## 다음 장 예고
 
 네트워크에서 IP 카메라를 찾았습니다. 하지만 Wi-Fi 없는 환경이라면? Ch12에서는 두 번째 탐지 레이어 — 빛의 역반사를 이용해 카메라 렌즈를 물리적으로 찾아내는 방법을 구현합니다.

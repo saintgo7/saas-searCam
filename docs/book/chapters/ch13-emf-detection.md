@@ -440,6 +440,59 @@ class MagneticRepositoryImpl @Inject constructor(
 
 ---
 
+## 13.7 코드 리뷰 개선 사항 — 명확한 상수와 스레드 안전
+
+### 개선 1: `SENSOR_DELAY_FASTEST` → 명시적 20Hz 상수
+
+**문제**: 초기 구현에서 `SensorManager.SENSOR_DELAY_FASTEST`를 사용했습니다. 이름 그대로 가능한 최고 속도(기기마다 다르며 최대 ~1ms)입니다. 결과는 두 가지 문제였습니다. 첫째, 불필요하게 높은 CPU·배터리 소모. 둘째, 실제 Hz를 코드에서 알 수 없어 가독성 저하.
+
+```kotlin
+// Before: "가장 빠르게" — 실제 Hz를 알 수 없고 배터리 낭비
+sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_FASTEST)
+
+// After: μs 단위 직접 지정 — 20Hz = 50,000μs (50ms 간격)
+companion object {
+    /** 20Hz 샘플링 = 50ms 간격 = 50,000μs */
+    private const val SENSOR_DELAY_20HZ_US = 50_000
+}
+
+sensorManager.registerListener(listener, sensor, SENSOR_DELAY_20HZ_US)
+```
+
+Android `SensorManager.registerListener()`의 세 번째 파라미터는 실제로 μs 단위 지연 값을 받습니다. `SENSOR_DELAY_GAME`(~20ms, ~50Hz), `SENSOR_DELAY_UI`(~60ms) 같은 상수도 있지만, 50_000을 직접 쓰면 코드를 읽는 사람이 "이 센서는 20Hz로 동작한다"는 사실을 즉시 알 수 있습니다.
+
+### 개선 2: `NoiseFilter` 스파이크 상수를 `companion object`으로 이동
+
+**문제**: `SPIKE_THRESHOLD_UT = 50f`와 `SPIKE_TIME_WINDOW_MS = 300L`이 함수 내부 지역 상수로 선언되어 있었습니다. 테스트 코드에서 이 임계값을 알려면 소스를 읽어야 했고, 두 곳 이상에서 같은 값이 사용되면 동기화가 어려웠습니다.
+
+```kotlin
+// Before: 함수 안에 숨어있는 매직 넘버
+private fun isSpikeDetected(magnitude: Float, timestamp: Long): Boolean {
+    val timeDiff = timestamp - previousTimestamp
+    val magnitudeDiff = abs(magnitude - previousMagnitude)
+    return magnitudeDiff > 50f && timeDiff < 300L  // 50과 300의 의미가 불명확
+}
+
+// After: companion object에 명명된 상수로 의도를 명확히 문서화
+companion object {
+    /** 급변 판정 임계값 (μT): 50μT 이상 급변 = 스마트폰 자체 간섭으로 판단 */
+    private const val SPIKE_THRESHOLD_UT = 50f
+
+    /** 급변 판정 시간 창 (ms): 300ms 이내 급변만 감지 */
+    private const val SPIKE_TIME_WINDOW_MS = 300L
+}
+
+private fun isSpikeDetected(magnitude: Float, timestamp: Long): Boolean {
+    val timeDiff = timestamp - previousTimestamp
+    val magnitudeDiff = abs(magnitude - previousMagnitude)
+    return magnitudeDiff > SPIKE_THRESHOLD_UT && timeDiff < SPIKE_TIME_WINDOW_MS
+}
+```
+
+이 상수들은 `NoiseFilterTest`에서도 참조 기준이 됩니다. 테스트 코드에서 "50μT 초과 + 300ms 이내" 케이스를 명시적으로 테스트합니다. 상수를 `companion object`에 두면 테스트의 가정(assumption)과 구현의 실제 값이 일치함을 보장할 수 있습니다.
+
+---
+
 ## 다음 장 예고
 
 세 개의 탐지 레이어를 모두 만들었습니다. 이제 가장 중요한 질문이 남았습니다 — 이 세 레이어의 결과를 어떻게 합쳐 "위험도 0~100"이라는 하나의 숫자로 만들까요? Ch14에서는 CrossValidator 설계와 위험도 산출 알고리즘을 다룹니다.
