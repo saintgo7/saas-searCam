@@ -97,20 +97,6 @@ class OuiDatabase @Inject constructor(
      */
     fun lookupVendor(macAddress: String): String? = getVendor(macAddress)
 
-    /**
-     * 해당 MAC 주소가 알려진 카메라/감시 장비 제조사인지 확인한다.
-     *
-     * Hikvision, Dahua, Reolink 등 감시 카메라 브랜드 키워드를 기준으로 판단한다.
-     *
-     * @param vendor 확인할 제조사명 (null이면 false)
-     * @return 카메라 관련 제조사이면 true
-     */
-    fun isSuspiciousVendor(vendor: String): Boolean {
-        return CAMERA_VENDOR_KEYWORDS.any { keyword ->
-            vendor.lowercase().contains(keyword)
-        }
-    }
-
     companion object {
         // 카메라 제조사 식별 키워드 (소문자)
         private val CAMERA_VENDOR_KEYWORDS = listOf(

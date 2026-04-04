@@ -63,7 +63,11 @@ class RunFullScanUseCase(
         val startedAt = System.currentTimeMillis()
 
         // 4개 레이어 병렬 실행
-        val (wifiResult, lensResult, irResult, magneticResult) = runAllLayersInParallel(lifecycleOwner)
+        val layersParallel = runAllLayersInParallel(lifecycleOwner)
+        val wifiResult = layersParallel.wifi
+        val lensResult = layersParallel.lens
+        val irResult = layersParallel.ir
+        val magneticResult = layersParallel.magnetic
 
         val completedAt = System.currentTimeMillis()
 
@@ -105,22 +109,30 @@ class RunFullScanUseCase(
         emit(report)
     }
 
+    /** 병렬 실행된 4개 레이어 결과를 이름으로 접근하기 위한 컨테이너 */
+    private data class AllLayerResults(
+        val wifi: LayerResult,
+        val lens: LayerResult,
+        val ir: LayerResult,
+        val magnetic: LayerResult,
+    )
+
     /**
      * 4개 레이어를 coroutineScope + async로 병렬 실행한다.
      *
-     * @return LayerResult 4-tuple (wifi, lens, ir, magnetic)
+     * @return 이름 기반 AllLayerResults (위치 기반 destructuring 오류 방지)
      */
-    private suspend fun runAllLayersInParallel(lifecycleOwner: LifecycleOwner): List<LayerResult> = coroutineScope {
+    private suspend fun runAllLayersInParallel(lifecycleOwner: LifecycleOwner): AllLayerResults = coroutineScope {
         val wifiDeferred = async { runWifiLayer() }
         val lensDeferred = async { runLensLayer(lifecycleOwner) }
         val irDeferred = async { runIrLayer(lifecycleOwner) }
         val magneticDeferred = async { runMagneticLayer() }
 
-        listOf(
-            wifiDeferred.await(),
-            lensDeferred.await(),
-            irDeferred.await(),
-            magneticDeferred.await(),
+        AllLayerResults(
+            wifi = wifiDeferred.await(),
+            lens = lensDeferred.await(),
+            ir = irDeferred.await(),
+            magnetic = magneticDeferred.await(),
         )
     }
 
