@@ -5,6 +5,7 @@ import javax.inject.Inject
 import com.searcam.domain.model.LayerResult
 import com.searcam.domain.model.LayerType
 import com.searcam.domain.model.ScanStatus
+import kotlin.math.roundToInt
 
 /**
  * 교차 검증 기반 위험도 산출 UseCase
@@ -65,7 +66,7 @@ class CalculateRiskUseCase @Inject constructor() {
             else -> CORRECTION_ALL
         }
 
-        val finalScore = (weightedScore * correctionFactor).toInt().coerceIn(0, 100)
+        val finalScore = (weightedScore * correctionFactor).roundToInt().coerceIn(0, 100)
         return Pair(finalScore, correctionFactor)
     }
 
