@@ -1,0 +1,13 @@
+{
+  "name": "searcam-api",
+  "version": "1.0.0",
+  "description": "SearCam Android ↔ Web 연동 API 서버",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}

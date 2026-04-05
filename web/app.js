@@ -1,5 +1,162 @@
 'use strict';
 
+// ── Real API integration ─────────────────────────────────────────────────────
+const API_BASE = '';   // same origin — nginx proxies /api/ → Node.js
+
+let sseSource = null;
+
+/**
+ * SSE 연결 — Android 앱이 스캔을 완료하면 즉시 결과를 수신한다.
+ * 연결 끊기면 3초 후 자동 재연결.
+ */
+function connectSSE() {
+  if (sseSource) sseSource.close();
+
+  sseSource = new EventSource(API_BASE + '/api/report/stream');
+
+  sseSource.onmessage = (e) => {
+    if (!e.data || e.data.trim().startsWith(':')) return;  // ping
+    try {
+      const report = JSON.parse(e.data);
+      setAndroidReady(report);
+      // 스캔 화면이 열려 있지 않으면 즉시 결과 표시
+      if (state.screen === 'home' || state.screen === 'result') {
+        showReportFromAndroid(report);
+      }
+    } catch (_) {}
+  };
+
+  sseSource.onerror = () => {
+    sseSource.close();
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+/**
+ * Android ScanReport JSON을 결과 화면에 표시한다.
+ * 시뮬레이션 showResult()와 동일 렌더링, 단 데이터 출처가 실제 앱.
+ */
+let _lastAndroidReport = null;
+
+function setAndroidReady(report) {
+  _lastAndroidReport = report;
+  const waiting = document.getElementById('android-waiting');
+  const badge   = document.getElementById('android-badge');
+  const btn     = document.getElementById('btn-view-android');
+  if (waiting) waiting.style.display = 'none';
+  if (badge) {
+    const level = { SAFE:'안전', INTEREST:'관심', CAUTION:'주의', DANGER:'위험', CRITICAL:'매우 위험' };
+    badge.textContent = `📱 Android 실측 — 위험도 ${report.riskScore}/100 (${level[report.riskLevel] ?? report.riskLevel})`;
+    badge.style.display = 'block';
+  }
+  if (btn) btn.style.display = 'block';
+}
+
+function showReportFromAndroid(report) {
+  const levelMap = {
+    SAFE:     { ko: '안전',     color: '#4CAF50', desc: '탐지된 위협 없음. 안전한 환경으로 판단됨' },
+    INTEREST: { ko: '관심',     color: '#8BC34A', desc: '경미한 의심 징후. 추가 확인 권장' },
+    CAUTION:  { ko: '주의',     color: '#FFC107', desc: '복수의 의심 징후 감지. 주의 깊게 점검 필요' },
+    DANGER:   { ko: '위험',     color: '#FF9800', desc: '강한 의심 징후. 즉각적인 점검 권장' },
+    CRITICAL: { ko: '매우 위험', color: '#F44336', desc: '몰래카메라 의심 강함. 즉시 신고 및 점검 권장' },
+  };
+
+  const score = report.riskScore ?? 0;
+  const level = levelMap[report.riskLevel] ?? levelMap.SAFE;
+
+  // Score ring
+  const arc = document.getElementById('score-arc');
+  const offset = 314 - (score / 100) * 314;
+  arc.style.stroke = level.color;
+  arc.style.strokeDashoffset = offset;
+
+  // Animated counter
+  const scoreEl = document.getElementById('score-num');
+  let cur = 0;
+  const step = Math.max(1, Math.ceil(score / 30));
+  const counter = setInterval(() => {
+    cur = Math.min(cur + step, score);
+    scoreEl.textContent = cur;
+    if (cur >= score) clearInterval(counter);
+  }, 40);
+  scoreEl.style.color = level.color;
+
+  document.getElementById('score-level').textContent = report.riskLevel ?? 'SAFE';
+  document.getElementById('score-label-ko').textContent = level.ko;
+  document.getElementById('score-label-ko').style.color = level.color;
+  document.getElementById('score-desc').textContent = level.desc;
+
+  // Correction factor
+  const corrRow = document.getElementById('correction-row');
+  const factor = report.correctionFactor ?? 1.0;
+  const factorLabels = { 0.7: '신뢰도 하향 보정 (단일 레이어)', 1.2: '교차 확인 가중 보정', 1.5: '전 레이어 양성 — 고위험 보정' };
+  const factorKey = Math.round(factor * 10) / 10;
+  if (factor !== 1.0) {
+    corrRow.classList.add('visible');
+    corrRow.textContent = `보정 계수: ×${factor.toFixed(1)} — ${factorLabels[factorKey] ?? ''} | 소요: ${((report.durationMs ?? 0) / 1000).toFixed(1)}s`;
+  } else {
+    corrRow.classList.remove('visible');
+  }
+
+  // Source badge
+  corrRow.classList.add('visible');
+  corrRow.textContent = `📱 Android 실측 데이터 | 보정 계수: ×${factor.toFixed(1)} | 소요: ${((report.durationMs ?? 0) / 1000).toFixed(1)}s`;
+
+  // Layer breakdown
+  const layersEl = document.getElementById('result-layers');
+  layersEl.innerHTML = '';
+  const layerColors = { WIFI: '#29B6F6', LENS: '#AB47BC', IR: '#CE93D8', MAGNETIC: '#66BB6A' };
+  const layerIcons  = { WIFI: '📡', LENS: '🔍', IR: '☀️', MAGNETIC: '🧲' };
+
+  const layerResults = report.layerResults ?? {};
+  Object.entries(layerResults).forEach(([type, layer]) => {
+    const color = layerColors[type] ?? '#9AA0A6';
+    const icon  = layerIcons[type]  ?? '●';
+    const contribution = Math.round((layer.weight ?? 0) * (layer.score ?? 0));
+    const row = document.createElement('div');
+    row.className = 'result-layer-row';
+    row.innerHTML = `
+      <div class="result-layer-icon">${icon}</div>
+      <div class="result-layer-info">
+        <div class="result-layer-name">${layer.labelKo ?? type}</div>
+        <div class="result-layer-note">가중 기여: +${contribution}점 (${layer.status ?? '—'})</div>
+      </div>
+      <div class="result-layer-score" style="color:${color}">${layer.score ?? 0}</div>
+      <div class="result-layer-bar-wrap">
+        <div class="result-layer-bar">
+          <div class="result-layer-bar-fill" style="width:${layer.score ?? 0}%;background:${color}"></div>
+        </div>
+      </div>`;
+    layersEl.appendChild(row);
+  });
+
+  // Device list
+  const devicesEl = document.getElementById('result-devices');
+  const devices = report.devices ?? [];
+  if (devices.length > 0) {
+    devicesEl.innerHTML = `<div class="devices-title">발견된 기기 (${devices.length})</div>`;
+    devices.forEach(d => {
+      const riskClass = (d.riskScore ?? 0) > 50 ? 'high' : (d.riskScore ?? 0) > 20 ? 'med' : 'low';
+      const riskLabel = (d.riskScore ?? 0) > 50 ? '고위험' : (d.riskScore ?? 0) > 20 ? '주의' : '정상';
+      const icon = d.isCamera ? '📷' : d.deviceType === 'ROUTER' ? '📡' : '📱';
+      const row = document.createElement('div');
+      row.className = 'device-row';
+      row.innerHTML = `
+        <div class="device-icon">${icon}</div>
+        <div class="device-info">
+          <div class="device-ip">${d.ip}</div>
+          <div class="device-vendor">${d.vendor ?? d.hostname ?? d.mac ?? '알 수 없음'}</div>
+        </div>
+        <div class="device-risk ${riskClass}">${riskLabel}</div>`;
+      devicesEl.appendChild(row);
+    });
+  } else {
+    devicesEl.innerHTML = '';
+  }
+
+  showScreen('result');
+}
+
 // ── Risk scoring (mirrors CalculateRiskUseCase.kt) ──────────────────────────
 const WEIGHTS = { wifi: 0.50, lens: 0.20, magnetic: 0.15 };
 const WEIGHTS_NO_WIFI = { wifi: 0.00, lens: 0.45, magnetic: 0.25 };
@@ -471,6 +628,19 @@ function showResult() {
 // ── Event listeners ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
 
+  // SSE 연결 시작 — Android 앱 결과 실시간 수신
+  connectSSE();
+
+  // 최신 결과 즉시 fetch (페이지 로드 시 이미 스캔된 결과 표시)
+  fetch(API_BASE + '/api/report/latest')
+    .then(r => r.ok ? r.json() : null)
+    .then(report => {
+      if (report) {
+        setAndroidReady(report);
+      }
+    })
+    .catch(() => {});
+
   document.getElementById('btn-quick-scan').addEventListener('click', () => {
     runScan('quick');
   });
@@ -501,5 +671,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-rescan').addEventListener('click', () => {
     runScan(state.scanMode);
+  });
+
+  document.getElementById('btn-view-android').addEventListener('click', () => {
+    if (_lastAndroidReport) showReportFromAndroid(_lastAndroidReport);
   });
 });

@@ -12,6 +12,9 @@ import kotlinx.coroutines.Dispatchers
 import javax.inject.Named
 import javax.inject.Singleton
 
+// 스캔 결과 업로드 API URL
+private const val REPORT_API_URL = "https://cam.abada.co.kr"
+
 /**
  * 앱 전역 의존성 DI 모듈
  *
@@ -50,6 +53,13 @@ object AppModule {
      * 온보딩 완료 여부, 사용자 설정, 마지막 스캔 타임스탬프 등을 저장한다.
      * 민감한 데이터(위치, 스캔 결과)는 Room DB에 별도 저장.
      */
+    /**
+     * 스캔 결과 업로드 API URL
+     */
+    @Provides
+    @Named("reportApiUrl")
+    fun provideReportApiUrl(): String = REPORT_API_URL
+
     @Provides
     @Singleton
     fun provideSharedPreferences(

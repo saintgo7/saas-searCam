@@ -118,6 +118,9 @@ dependencies {
     // 로깅 (Timber: 릴리즈 빌드에서 자동 비활성화)
     implementation(libs.timber)
 
+    // HTTP (스캔 보고서 업로드)
+    implementation(libs.okhttp)
+
     // DB 암호화 (SQLCipher — 스캔 이력 평문 저장 방지)
     implementation(libs.sqlcipher)
 

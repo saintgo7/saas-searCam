@@ -5,9 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.searcam.domain.model.NetworkDevice
 import com.searcam.domain.model.ScanReport
+import com.searcam.data.remote.ScanReportUploader
 import com.searcam.domain.usecase.RunFullScanUseCase
 import com.searcam.domain.usecase.RunQuickScanUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,6 +79,7 @@ sealed class ScanUiEvent {
 class ScanViewModel @Inject constructor(
     private val runQuickScanUseCase: RunQuickScanUseCase,
     private val runFullScanUseCase: RunFullScanUseCase,
+    private val reportUploader: ScanReportUploader,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ScanUiState>(ScanUiState.Idle)
@@ -106,6 +109,8 @@ class ScanViewModel @Inject constructor(
                 runQuickScanUseCase.invoke().collect { report ->
                     _uiState.value = ScanUiState.Success(report)
                     _events.emit(ScanUiEvent.NavigateToResult(report.id))
+                    // 백그라운드에서 웹 연동 업로드 (실패해도 앱 동작 영향 없음)
+                    launch(Dispatchers.IO) { reportUploader.upload(report) }
                 }
             } catch (e: Exception) {
                 _uiState.value = ScanUiState.Error(
@@ -134,6 +139,7 @@ class ScanViewModel @Inject constructor(
                 runFullScanUseCase.invoke(lifecycleOwner).collect { report ->
                     _uiState.value = ScanUiState.Success(report)
                     _events.emit(ScanUiEvent.NavigateToResult(report.id))
+                    launch(Dispatchers.IO) { reportUploader.upload(report) }
                 }
             } catch (e: Exception) {
                 _uiState.value = ScanUiState.Error(
