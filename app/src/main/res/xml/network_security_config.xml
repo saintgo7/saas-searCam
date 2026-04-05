@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  네트워크 보안 설정
+  - 프로덕션: HTTPS만 허용 (cam.abada.co.kr은 Cloudflare HTTPS)
+  - 디버그: 로컬 개발 서버(10.x, 192.168.x) HTTP 허용
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+
+    <!-- 디버그 빌드 전용: 로컬 네트워크 HTTP 허용 -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

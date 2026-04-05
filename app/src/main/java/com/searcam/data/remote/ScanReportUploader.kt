@@ -130,11 +130,13 @@ class ScanReportUploader @Inject constructor(
         return JSONArray().apply {
             readings.forEach { r ->
                 put(JSONObject().apply {
+                    put("timestamp", r.timestamp)
                     put("x", r.x)
                     put("y", r.y)
                     put("z", r.z)
                     put("magnitude", r.magnitude)
-                    put("timestamp", r.timestamp)
+                    put("delta", r.delta)
+                    put("level", r.level.name)
                 })
             }
         }
